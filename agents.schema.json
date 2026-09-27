@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "agentsemble team plan",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "wishlist": { "type": "array", "items": { "type": "string" }, "description": "Tools that would help but are not installed." }
+  },
+  "additionalProperties": {
+    "type": "object",
+    "required": ["dir"],
+    "additionalProperties": false,
+    "properties": {
+      "dir": { "type": "string", "description": "\".\" for main, \"../<repo>-<role>\" for a sub role." },
+      "branch": { "type": "string", "description": "Branch the sub role's worktree works on. Required for sub roles." },
+      "what": { "type": "string" },
+      "not": { "type": "string" },
+      "owns": { "type": "array", "items": { "type": "string" } },
+      "skills": { "type": "array", "items": { "type": "string" } },
+      "plugins": { "type": "object", "additionalProperties": { "type": "boolean" } }
+    }
+  }
+}
