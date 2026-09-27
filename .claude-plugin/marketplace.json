@@ -1,5 +1,6 @@
 {
   "name": "agentsemble",
+  "description": "agentsemble — assemble a team of Claude Code sessions for a repo and watch it on a local board.",
   "owner": { "name": "havanafrog" },
   "plugins": [{ "name": "agentsemble", "source": "./", "description": "Assemble and watch a team of Claude Code sessions." }]
 }
