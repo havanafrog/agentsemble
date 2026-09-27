@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agentsemble</title>
+<style>
+  :root {
+    --page: #f4f5f8; --surface: #fbfcfd;
+    --text: #191f28; --sub: #4e5968; --faint: #6b7684;
+    --hair: #e5e8eb; --ring: inset 0 0 0 1px rgba(2,32,71,.06);
+    --live: #e0303e; --calm: #1b64da; --warn: #b26b00; --good: #0f8a4c; --me: #0a66ea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page: #17171c; --surface: #1f2027;
+      --text: #e9ecef; --sub: #b6bec7; --faint: #8d96a3;
+      --hair: #2b2d36; --ring: inset 0 0 0 1px rgba(255,255,255,.07);
+      --live: #ff6b76; --calm: #6ea8ff; --warn: #f5b04a; --good: #3fd08a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--text);
+    font: 14px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 48px; }
+  button { font: inherit; }
+
+  .bar { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 0 2px 14px; }
+  h1 { font-size: 15px; margin: 0; }
+  .meta { font-size: 12px; color: var(--sub); font-variant-numeric: tabular-nums; }
+  .meta b { color: var(--text); font-weight: 650; }
+  .meta .warn { color: var(--warn); }
+  .repo { margin-left: auto; }
+
+  .tabs { display: flex; gap: 2px; margin: 0 0 14px; border-bottom: 1px solid var(--hair); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  .tab { appearance: none; background: none; border: 0; cursor: pointer; white-space: nowrap;
+    font-size: 13px; font-weight: 650; color: var(--sub); min-height: 44px;
+    padding: 8px 14px; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab:hover { color: var(--text); }
+  .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--calm); }
+  .tab .n { font-weight: 500; font-variant-numeric: tabular-nums; color: var(--faint); margin-left: 4px; }
+  [role="tabpanel"][hidden] { display: none; }
+
+  .cards { display: grid; gap: 12px; align-items: start;
+    grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr)); }
+  .win { background: var(--surface); box-shadow: var(--ring); border-radius: 16px;
+    padding: 14px 16px 12px; display: grid; gap: 8px; cursor: pointer; text-align: left; width: 100%;
+    border: 0; color: inherit; }
+  .win:hover, .win:focus-visible { box-shadow: inset 0 0 0 1.5px var(--calm); outline: none; }
+  .win.moving { box-shadow: inset 0 0 0 1.5px var(--live); }
+  .win.main { box-shadow: inset 0 0 0 2px var(--text); }
+  .head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .nm { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .role { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; flex: none;
+    color: var(--surface); background: var(--text); border-radius: 5px; padding: 1px 6px; }
+  .role.sub { background: var(--sub); }
+  .ph { margin-left: auto; font-size: 11.5px; color: var(--sub); flex: none; }
+  .ph.moving { color: var(--live); font-weight: 650; }
+  .ph.busy { color: var(--warn); font-weight: 650; }
+  .asked { font-size: 12.5px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .asked i { font-style: normal; color: var(--faint); margin-right: 6px; }
+  .flow { display: grid; gap: 2px; font-size: 12px; }
+  .flow div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sub); }
+  .flow b { font-weight: 650; color: var(--text); margin-right: 6px; }
+  .foot { display: flex; gap: 10px; align-items: center; font-size: 11.5px; color: var(--sub);
+    font-variant-numeric: tabular-nums; }
+  .copy { appearance: none; border: 0; background: var(--page); color: var(--sub); cursor: pointer;
+    margin-left: auto; border-radius: 8px; padding: 4px 10px; min-height: 28px; font-size: 11.5px; }
+  .copy:hover { color: var(--text); }
+  code.cmd { display: block; font-size: 11px; white-space: pre-wrap; word-break: break-all; color: var(--sub); }
+
+  .trunk { width: 2px; height: 16px; background: var(--faint); margin-left: 34px; }
+  .subs { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start;
+    border-top: 2px solid var(--faint); padding-top: 16px; margin: 0 0 20px 34px; }
+  .sub { width: 380px; max-width: 100%; }
+  .order { font-size: 11.5px; color: var(--sub); margin: 0 0 6px 8px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .order b { color: var(--text); font-weight: 650; }
+  .empty { padding: 14px; color: var(--sub); font-size: 13px; }
+
+  .card { background: var(--surface); box-shadow: var(--ring); border-radius: 14px; padding: 4px 0; margin-bottom: 12px; }
+  .row { display: flex; gap: 10px; align-items: baseline; padding: 7px 14px; border-bottom: 1px solid var(--hair); }
+  .row:last-child { border-bottom: 0; }
+  .rid { font-weight: 650; font-size: 12px; width: 34px; flex: none; font-variant-numeric: tabular-nums; }
+  .tag { font-size: 11px; font-weight: 650; flex: none; width: 56px; }
+  .tag.claim { color: var(--calm); } .tag.confirm { color: var(--good); }
+  .tag.refute { color: var(--live); } .tag.hold { color: var(--warn); } .tag.note { color: var(--sub); }
+  .what { font-size: 12.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .when { margin-left: auto; font-size: 11px; color: var(--sub); flex: none; }
+
+  details.fold { border-bottom: 1px solid var(--hair); }
+  details.fold:last-child { border-bottom: 0; }
+  details.fold > summary { display: flex; gap: 8px; align-items: baseline; padding: 10px 14px; min-height: 44px;
+    cursor: pointer; list-style: none; font-size: 12.5px; color: var(--sub); }
+  details.fold > summary::-webkit-details-marker { display: none; }
+  details.fold > summary::before { content: '▸'; width: 10px; flex: none; }
+  details.fold[open] > summary::before { content: '▾'; }
+  details.fold > summary b { color: var(--text); font-weight: 650; }
+  details.fold > summary .cnt { margin-left: auto; font-size: 11px; font-variant-numeric: tabular-nums; }
+  details.fold .row, details.fold details.fold > summary { padding-left: 28px; }
+
+  .kit { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--hair); }
+  .kit:last-child { border-bottom: 0; }
+  .kit .who { font-weight: 700; width: 90px; flex: none; }
+  .kit span.i { font-size: 12px; border-radius: 6px; padding: 2px 8px; box-shadow: inset 0 0 0 1px var(--hair); color: var(--text); }
+  .kit span.plug { background: var(--page); box-shadow: none; }
+  .kit span.miss { box-shadow: inset 0 0 0 1.5px var(--live); }
+  .kit span.miss::after { content: ' missing'; font-weight: 700; }
+  .kit span.extra { box-shadow: none; outline: 1px dashed var(--sub); outline-offset: -1px; }
+  .kit span.extra::before { content: '+ '; }
+  .kit span.plan { color: var(--sub); }
+  .kit span.shared { color: var(--sub); box-shadow: none; }
+  .kit .note { font-size: 11.5px; color: var(--sub); margin-left: auto; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 8px 14px; border-bottom: 1px solid var(--hair); }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-weight: 650; color: var(--sub); font-size: 11.5px; }
+  .fine { font-size: 11.5px; color: var(--sub); margin: 8px 2px 0; }
+
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(580px, 100vw); background: var(--surface);
+    box-shadow: -8px 0 32px rgba(0,0,0,.18); display: flex; flex-direction: column; z-index: 10; }
+  .drawer[hidden] { display: none; }
+  .dh { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--hair); }
+  .dh b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .x { appearance: none; border: 0; background: none; font-size: 18px; color: var(--sub); cursor: pointer;
+    margin-left: auto; width: 44px; height: 44px; border-radius: 8px; flex: none; }
+  .x:hover { background: var(--page); color: var(--text); }
+  .db { flex: 1; overflow-y: auto; padding: 12px 16px 24px; display: flex; flex-direction: column; gap: 8px; overscroll-behavior: contain; }
+  .more { align-self: center; appearance: none; border: 0; background: var(--page); color: var(--sub);
+    font-size: 12px; padding: 8px 16px; border-radius: 999px; cursor: pointer; min-height: 36px; }
+  .bub { max-width: 86%; padding: 8px 12px; border-radius: 14px; font-size: 13px; line-height: 1.55;
+    word-break: break-word; white-space: pre-wrap; }
+  .bub.me { align-self: flex-end; background: var(--me); color: #fff; border-bottom-right-radius: 4px; }
+  .bub.claude { align-self: flex-start; background: var(--page); border-bottom-left-radius: 4px; }
+  .bub.in { align-self: flex-start; box-shadow: inset 0 0 0 1.5px var(--warn); }
+  .bub .t { display: block; font-size: 10.5px; opacity: .8; margin-bottom: 2px; }
+  .tools { font-size: 11.5px; color: var(--sub); }
+  .tools summary { cursor: pointer; padding: 2px 4px; }
+  .tools ol { margin: 4px 0; padding-left: 22px; }
+  .tools li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (prefers-reduced-motion: no-preference) { .win { transition: box-shadow .15s; } }
+</style>
+
+<div class="wrap">
+  <div class="bar">
+    <h1>agentsemble</h1>
+    <span class="meta" id="tally"></span>
+    <span class="meta repo" id="repo"></span>
+  </div>
+
+  <div class="tabs" role="tablist" aria-label="Board">
+    <button class="tab" role="tab" id="t-team" aria-controls="p-team" aria-selected="true">Team</button>
+    <button class="tab" role="tab" id="t-wins" aria-controls="p-wins" aria-selected="false">Sessions<span class="n" id="n-wins"></span></button>
+    <button class="tab" role="tab" id="t-tools" aria-controls="p-tools" aria-selected="false">Tools<span class="n" id="n-tools"></span></button>
+    <button class="tab" role="tab" id="t-ledger" aria-controls="p-ledger" aria-selected="false">Ledger<span class="n" id="n-ledger"></span></button>
+    <button class="tab" role="tab" id="t-cost" aria-controls="p-cost" aria-selected="false">Cost</button>
+  </div>
+
+  <section role="tabpanel" id="p-team" aria-labelledby="t-team"></section>
+  <section role="tabpanel" id="p-wins" aria-labelledby="t-wins" hidden></section>
+  <section role="tabpanel" id="p-tools" aria-labelledby="t-tools" hidden></section>
+  <section role="tabpanel" id="p-ledger" aria-labelledby="t-ledger" hidden></section>
+  <section role="tabpanel" id="p-cost" aria-labelledby="t-cost" hidden></section>
+</div>
+
+<aside class="drawer" id="drawer" role="dialog" aria-modal="false" aria-labelledby="dname" hidden>
+  <div class="dh"><b id="dname"></b><button class="x" id="dx" type="button" aria-label="Close">✕</button></div>
+  <div class="db" id="dbody" aria-live="polite"></div>
+</aside>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+const cut = (t, n) => { t = String(t ?? ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+const ago = ms => ms < 60e3 ? 'just now' : ms < 3600e3 ? Math.round(ms / 60e3) + 'm ago'
+  : ms < 86400e3 ? Math.round(ms / 3600e3) + 'h ago' : Math.round(ms / 86400e3) + 'd ago';
+const money = v => '$' + (v >= 100 ? v.toFixed(0) : v.toFixed(2));
+const toks = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : String(n);
+const PHASE = { moving: 'moving', waiting: 'your turn', busy: 'no reply yet', stopped: 'stopped' };
+
+// Tabs — remembered per viewer; the board is local so localStorage is fine.
+const TABS = ['team', 'wins', 'tools', 'ledger', 'cost'];
+function pick(name) {
+  for (const t of TABS) {
+    const on = t === name;
+    $('t-' + t).setAttribute('aria-selected', String(on));
+    $('t-' + t).tabIndex = on ? 0 : -1;
+    $('p-' + t).hidden = !on;
+  }
+  try { localStorage.setItem('as-tab', name); } catch { /* private mode */ }
+}
+for (const t of TABS) $('t-' + t).onclick = () => pick(t);
+document.querySelector('.tabs').addEventListener('keydown', e => {
+  const i = TABS.findIndex(t => $('t-' + t).getAttribute('aria-selected') === 'true');
+  const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+  if (!d) return;
+  const n = TABS[(i + d + TABS.length) % TABS.length];
+  pick(n); $('t-' + n).focus(); e.preventDefault();
+});
+try { const s = localStorage.getItem('as-tab'); if (TABS.includes(s)) pick(s); } catch { /* */ }
+
+// Folds survive the 2-second redraw.
+const OPENED = new Set();
+addEventListener('toggle', e => {
+  const d = e.target.closest?.('details[data-k]');
+  if (!d) return;
+  if (d.open) OPENED.add(d.dataset.k); else OPENED.delete(d.dataset.k);
+}, true);
+const fold = (k, head, count, body) => `<details class="fold" data-k="${esc(k)}"${OPENED.has(k) ? ' open' : ''}>`
+  + `<summary>${head}<span class="cnt">${esc(count)}</span></summary>${body}</details>`;
+
+const resumeCmd = s => `cd "${s.cwd ?? ''}" && claude --resume ${s.id}`;
+
+function card(s, now, isMain) {
+  const steps = (s.steps ?? []).map(x => `<div><b>${esc(x.tool ?? 'says')}</b>${esc(x.text)}</div>`).join('');
+  return `<button type="button" class="win ${s.phase === 'moving' ? 'moving' : ''} ${isMain ? 'main' : ''}" data-id="${esc(s.id)}">`
+    + `<div class="head"><span class="nm">${esc(s.name ?? s.id.slice(0, 8))}</span>`
+    + (s.role ? `<span class="role ${isMain ? '' : 'sub'}">${esc(s.role)}</span>` : '')
+    + `<span class="ph ${esc(s.phase)}">${esc(PHASE[s.phase] ?? '')} · ${esc(ago(s.idleMs))}</span></div>`
+    + (s.asked ? `<div class="asked"><i>asked</i>${esc(cut(s.asked, 90))}</div>` : '')
+    + (steps ? `<div class="flow">${steps}</div>` : '')
+    + `<div class="foot"><span>${esc(s.branch ?? '')}</span>`
+    + (s.cost ? `<span>${toks(s.cost.in + s.cost.out + s.cost.cacheRead)} tok</span><span>${money(s.cost.usd)}</span>` : '')
+    + `<span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span></div></button>`;
+}
+
+function teamHtml(d, now) {
+  const by = new Map(d.sessions.map(s => [s.id, s]));
+  const main = by.get(d.team.main);
+  if (!main) return `<div class="empty">No main session yet. Open Claude Code in this repo and run <code>/agentsemble</code>.</div>`
+    + (d.sessions.length ? `<div class="cards">${d.sessions.map(s => card(s, now)).join('')}</div>` : '');
+  const subs = d.team.subs.map(x => ({ ...x, s: by.get(x.id) })).filter(x => x.s);
+  const rest = d.sessions.filter(s => s.id !== main.id && !subs.some(x => x.id === s.id));
+  return `<div class="sub" style="width:min(460px,100%)">${card(main, now, true)}</div>`
+    + (subs.length ? `<div class="trunk"></div><div class="subs">${subs.map(x => `<div class="sub">`
+      + (x.order ? `<div class="order"><b>last order</b> ${esc(cut(x.order.text, 80))}</div>` : '')
+      + card(x.s, now) + '</div>').join('')}</div>` : '')
+    + (rest.length ? fold('team:rest', '<b>Other sessions in this repo</b>', rest.length, `<div class="cards" style="padding:8px 0">${rest.map(s => card(s, now)).join('')}</div>`) : '');
+}
+
+function winsHtml(d, now) {
+  const stopped = d.sessions.filter(s => s.phase === 'stopped');
+  const active = d.sessions.filter(s => s.phase !== 'stopped');
+  const others = d.live.filter(w => !w.here);
+  const byProj = new Map();
+  for (const w of others) byProj.set(w.project ?? '?', [...(byProj.get(w.project ?? '?') ?? []), w]);
+  const lv = w => `<div class="row"><span class="what">${esc(w.name ?? w.id.slice(0, 8))}</span><span class="when">${esc(ago(now - w.updatedAt))}</span></div>`;
+  return (active.length ? `<div class="cards">${active.map(s => card(s, now, s.role === 'main')).join('')}</div>` : '<div class="empty">No active sessions.</div>')
+    + `<div class="card" style="margin-top:14px">`
+    + (stopped.length ? fold('wins:stopped', '<b>Stopped</b> quiet over 10 minutes', stopped.length, `<div class="cards" style="padding:8px">${stopped.map(s => card(s, now)).join('')}</div>`) : '')
+    + [...byProj].map(([p, ws]) => fold('live:' + p, `<b>${esc(p)}</b> open elsewhere`, ws.length, ws.map(lv).join(''))).join('')
+    + '</div>';
+}
+
+function toolsHtml(d) {
+  const item = (cls, t) => `<span class="i ${cls} ${esc(t.st)}" title="${esc({ ok: 'as planned', miss: 'planned, not installed', extra: 'installed, not planned', plan: 'not set up yet' }[t.st] ?? '')}">${esc(t.name)}</span>`;
+  return `<div class="card">` + d.roles.map(r => {
+    const k = r.kit;
+    const setUp = !k.skills.some(i => i.st === 'plan');
+    return `<div class="kit"><span class="who">${esc(r.name)}</span>`
+      + k.skills.map(i => item('', i)).join('') + k.plugins.map(i => item('plug', i)).join('')
+      + k.shared.map(s => `<span class="i shared" title="tracked by the repo; every role has it">${esc(s)}</span>`).join('')
+      + (setUp ? '' : `<span class="note">not set up — node bin/setup.mjs ${esc(r.name)}</span>`) + '</div>';
+  }).join('') + '</div><p class="fine">From agents.json (plan) against each worktree\'s .claude (installed). Plugins not named in the plan follow your global settings.</p>';
+}
+
+function ledgerRow(r, now) {
+  const cls = r.kind === 'claim' ? 'claim' : r.kind === 'verdict' ? r.v : 'note';
+  const t = Date.parse(r.at);
+  return `<div class="row"><span class="rid">${esc(r.id ?? '')}</span><span class="tag ${esc(cls)}">${esc(r.kind === 'verdict' ? r.v : r.kind)}</span>`
+    + `<span class="what">${esc(r.what ?? r.note ?? r.text ?? '')}</span><span class="when">${esc(r.by ?? '')}${Number.isFinite(t) ? ' · ' + ago(now - t) : ''}</span></div>`;
+}
+function ledgerHtml(g, now) {
+  if (!g.claims.length && !g.notes.length) return '<div class="empty">The ledger is empty. The builder adds claims with <code>/ops claim</code>.</div>';
+  const open = g.claims.filter(c => !c.done), done = g.claims.filter(c => c.done);
+  return `<div class="card">` + (open.length ? open.map(c => c.rows.map(r => ledgerRow(r, now)).join('')).join('') : '<div class="empty">No open claims.</div>') + '</div>'
+    + `<div class="card">`
+    + (done.length ? fold('led:done', '<b>Done</b> last verdict confirm', done.length, done.map(c => fold('led:' + c.id,
+        `<b>${esc(c.id)}</b> ${esc(cut(c.rows[0].what ?? '', 70))}`, c.rows.filter(r => r.kind === 'verdict').map(r => r.v).join(' → '),
+        c.rows.map(r => ledgerRow(r, now)).join(''))).join('')) : '')
+    + g.notes.map(n => fold('note:' + n.label, `<b>${esc(n.label)}</b> notes`, n.rows.length, n.rows.map(r => ledgerRow(r, now)).join(''))).join('')
+    + '</div>';
+}
+
+function costHtml(d) {
+  const rows = [...d.sessions].sort((a, b) => (b.cost?.usd ?? 0) - (a.cost?.usd ?? 0));
+  return `<div class="card"><table><thead><tr><th scope="col">Session</th><th scope="col">Input</th><th scope="col">Output</th><th scope="col">Cache read</th><th scope="col">Cache write</th><th scope="col">USD</th></tr></thead><tbody>`
+    + rows.map(s => `<tr><td>${esc(s.name ?? s.id.slice(0, 8))}${s.role ? ' · ' + esc(s.role) : ''}</td><td>${toks(s.cost.in)}</td><td>${toks(s.cost.out)}</td><td>${toks(s.cost.cacheRead)}</td><td>${toks(s.cost.cacheWrite)}</td><td>${money(s.cost.usd)}</td></tr>`).join('')
+    + `</tbody></table></div><p class="fine">API list-price estimate, not your bill — subscriptions are billed differently.`
+    + (d.unpriced ? ` <b>${d.unpriced}</b> rows use a model with no price in <code>bin/cost.mjs</code> PRICES and count as $0.` : '') + '</p>';
+}
+
+function paint(id, html) { if ($(id).innerHTML !== html) $(id).innerHTML = html; }
+
+let LAST = null;
+async function tick() {
+  let d;
+  try { d = await (await fetch('/api/board', { cache: 'no-store' })).json(); } catch { $('tally').textContent = 'board server not reachable'; return; }
+  LAST = d;
+  const now = d.now;
+  const off = d.roles.reduce((a, r) => a + [...r.kit.skills, ...r.kit.plugins].filter(i => i.st === 'miss' || i.st === 'extra').length, 0);
+  $('tally').innerHTML = `<b>${d.sessions.filter(s => s.phase !== 'stopped').length}</b> active · <b>${d.open.length}</b> open claims · <b>${money(d.spend)}</b>`
+    + (off ? ` · <span class="warn">${off} tool mismatch</span>` : '');
+  $('repo').textContent = [d.repo.branch, d.repo.head?.hash, d.repo.dirty.length ? d.repo.dirty.length + ' uncommitted' : '',
+    d.repo.ahead ? d.repo.ahead + ' ahead' : ''].filter(Boolean).join(' · ');
+  $('n-wins').textContent = d.sessions.length || '';
+  $('n-tools').textContent = off || '';
+  $('n-ledger').textContent = d.open.length || '';
+  paint('p-team', teamHtml(d, now));
+  paint('p-wins', winsHtml(d, now));
+  paint('p-tools', toolsHtml(d));
+  paint('p-ledger', ledgerHtml(d.groups, now));
+  paint('p-cost', costHtml(d));
+}
+
+// Copy the resume command; where the clipboard is blocked, show it to copy by hand.
+document.addEventListener('click', e => {
+  const c = e.target.closest('[data-copy]');
+  if (c) {
+    e.stopPropagation();
+    const cmd = c.dataset.copy;
+    (navigator.clipboard?.writeText(cmd) ?? Promise.reject()).then(() => { c.textContent = 'copied'; },
+      () => { c.outerHTML = `<code class="cmd">${esc(cmd)}</code>`; });
+    return;
+  }
+  const w = e.target.closest('.win');
+  if (w) openDrawer(w.dataset.id);
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('drawer').hidden) closeDrawer();
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-copy]')) { e.preventDefault(); e.target.click(); }
+});
+
+// Drawer: one session's conversation.
+let OPEN_ID = null, START = 0, OPENER = null;
+function bubble(it) {
+  const t = it.at ? new Date(it.at).toLocaleTimeString() : '';
+  if (it.who === 'tools') return `<details class="tools"><summary>${it.tools.length} tool call${it.tools.length > 1 ? 's' : ''}</summary><ol>${it.tools.map(x => `<li><b>${esc(x.name)}</b> ${esc(x.text)}</li>`).join('')}</ol></details>`;
+  const from = it.who === 'in' ? `from ${esc(it.from)} · ` : '';
+  return `<div class="bub ${esc(it.who)}"><span class="t">${from}${esc(t)}</span>${esc(it.text)}</div>`;
+}
+async function openDrawer(id) {
+  OPEN_ID = id; OPENER = document.activeElement;
+  const s = LAST?.sessions.find(x => x.id === id);
+  $('dname').textContent = s?.name ?? id.slice(0, 8);
+  $('dbody').innerHTML = '<div class="empty">Loading…</div>';
+  $('drawer').hidden = false; $('dx').focus();
+  const r = await fetch('/api/log?id=' + encodeURIComponent(id));
+  if (!r.ok) { $('dbody').innerHTML = '<div class="empty">Log not found.</div>'; return; }
+  const j = await r.json();
+  START = j.start;
+  $('dbody').innerHTML = (START > 0 ? '<button class="more" id="more" type="button">Earlier</button>' : '') + j.items.map(bubble).join('');
+  $('dbody').scrollTop = $('dbody').scrollHeight;
+}
+$('dbody').addEventListener('click', async e => {
+  if (e.target.id !== 'more') return;
+  const j = await (await fetch(`/api/log?id=${encodeURIComponent(OPEN_ID)}&before=${START}`)).json();
+  START = j.start;
+  e.target.remove();
+  $('dbody').insertAdjacentHTML('afterbegin', (START > 0 ? '<button class="more" id="more" type="button">Earlier</button>' : '') + j.items.map(bubble).join(''));
+});
+function closeDrawer() { $('drawer').hidden = true; OPEN_ID = null; OPENER?.focus?.(); }
+$('dx').onclick = closeDrawer;
+
+tick();
+setInterval(tick, 2000);
+</script>
+</html>
