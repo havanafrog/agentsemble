@@ -1,0 +1,20 @@
+#!/usr/bin/env node
+// One line per role: does its worktree have what agents.json plans? Exit 1 when something is off.
+import { execFileSync } from 'node:child_process';
+import { loadAgents } from './lib/agents.mjs';
+import { kitOf } from './lib/kit.mjs';
+
+const repo = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+const { roles, wishlist } = loadAgents(repo);
+const declared = new Set(roles.flatMap(r => r.skills));
+let bad = 0;
+for (const r of roles) {
+  const k = kitOf(r, declared);
+  const off = [...k.skills, ...k.plugins].filter(i => i.st === 'miss' || i.st === 'extra');
+  bad += off.length;
+  console.log(`${r.name.padEnd(8)} ${off.length ? off.map(i => (i.st === 'miss' ? 'missing ' : 'extra ') + i.name).join(', ') : 'ok'}`
+    + (k.skills.some(i => i.st === 'plan') ? '  (not set up yet — node bin/setup.mjs ' + r.name + ')' : '')
+    + (k.shared.length ? `  [repo skills: ${k.shared.join(', ')}]` : ''));
+}
+if (wishlist.length) console.log(`wishlist: ${wishlist.join(' · ')}`);
+process.exit(bad ? 1 : 0);
