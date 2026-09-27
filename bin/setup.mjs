@@ -6,32 +6,47 @@
 // A worktree has its own .claude/, so tools are per role:
 //   .claude/skills/<name>        copies of the role's skills (from the skill stores)
 //   .claude/settings.local.json  enabledPlugins only — every other key is left alone
-import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, rmSync, readdirSync, mkdtempSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, rmSync, mkdtempSync, realpathSync } from 'node:fs';
+import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { loadAgents } from './lib/agents.mjs';
-import { claudeHome } from './lib/paths.mjs';
+import { claudeHome, isMain } from './lib/paths.mjs';
+
+// Setup only ever deletes what it copied itself; the names are kept here, inside the worktree.
+const MARK = '.agentsemble.json';
 
 /** Put a role's skills and plugins into its worktree. Returns human-readable lines. */
 export function applyRole(role, { stores, shared }) {
   const out = [];
   const sk = join(role.dir, '.claude', 'skills');
   mkdirSync(sk, { recursive: true });
-  // Skills from another role are taken out. Repo-tracked ones (shared) stay.
-  for (const f of readdirSync(sk).sort()) {
-    if (!shared.includes(f) && !role.skills.includes(f)) { rmSync(join(sk, f), { recursive: true, force: true }); out.push(`- ${f}`); }
+  const markFile = join(sk, MARK);
+  let mine = [];
+  try { mine = JSON.parse(readFileSync(markFile, 'utf8')).copied ?? []; } catch { /* first run */ }
+  // Take out skills this tool copied for an earlier plan. The user's own and repo-tracked ones stay.
+  for (const f of [...mine].sort()) {
+    if (role.skills.includes(f) || shared.includes(f)) continue;
+    rmSync(join(sk, f), { recursive: true, force: true });
+    out.push(`- ${f}`);
   }
+  const copied = [];
   for (const s of role.skills) {
     const src = stores.map(d => join(d, s)).find(p => existsSync(p));
     if (!src) { out.push(`! ${s} not found (looked in ${stores.join(', ')})`); continue; }
     cpSync(src, join(sk, s), { recursive: true, force: true });
+    copied.push(s);
     out.push(`+ ${s}`);
   }
+  writeFileSync(markFile, JSON.stringify({ copied }, null, 2) + '\n');
   const sf = join(role.dir, '.claude', 'settings.local.json');
   let cur = {};
-  try { cur = JSON.parse(readFileSync(sf, 'utf8')); } catch { /* missing or broken: start fresh */ }
+  if (existsSync(sf)) {
+    // A hand-edited file that doesn't parse would lose the user's permissions if rewritten. Stop instead.
+    try { cur = JSON.parse(readFileSync(sf, 'utf8')); }
+    catch (e) { throw new Error(`${sf} is not valid JSON (${e.message}); fix it and run setup again`); }
+  }
   cur.enabledPlugins = { ...(cur.enabledPlugins ?? {}), ...role.plugins };
   writeFileSync(sf, JSON.stringify(cur, null, 2) + '\n');
   const pl = Object.entries(role.plugins);
@@ -39,8 +54,18 @@ export function applyRole(role, { stores, shared }) {
   return out;
 }
 
+const gitOut = (dir, ...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+const commonDir = dir => realpathSync(resolve(dir, gitOut(dir, 'rev-parse', '--git-common-dir')));
+
 export function ensureWorktree(repoRoot, role) {
-  if (role.isMain || existsSync(role.dir)) return 'exists';
+  if (role.isMain) return 'exists';
+  if (existsSync(role.dir)) {
+    // Only reuse a folder that is a worktree of this repo — never someone else's project next door.
+    let same = false;
+    try { same = commonDir(role.dir) === commonDir(repoRoot); } catch { /* not a git folder */ }
+    if (!same) throw new Error(`${role.dir} exists but is not a worktree of this repo; move it or change "dir" for ${role.name}`);
+    return 'exists';
+  }
   const has = execFileSync('git', ['-C', repoRoot, 'branch', '--list', role.branch], { encoding: 'utf8' }).trim();
   execFileSync('git', ['-C', repoRoot, 'worktree', 'add', '-q', role.dir, ...(has ? [role.branch] : ['-b', role.branch])],
     { stdio: 'pipe' });
@@ -48,9 +73,11 @@ export function ensureWorktree(repoRoot, role) {
 }
 
 const IGNORE = ['.claude/settings.local.json', '.claude/skills/*'];
-/** Keep per-role tool copies out of git. Returns true when lines were added. */
-export function ensureGitignore(dir) {
-  const f = join(dir, '.gitignore');
+/** Keep per-role tool copies out of git in every worktree: info/exclude is shared by all of them,
+ *  needs no commit, and leaves the user's tracked .gitignore alone. Returns true when lines were added. */
+export function ensureExclude(repoRoot) {
+  const f = join(commonDir(repoRoot), 'info', 'exclude');
+  mkdirSync(dirname(f), { recursive: true });
   const cur = existsSync(f) ? readFileSync(f, 'utf8') : '';
   const lines = cur.split(/\r?\n/);
   const add = IGNORE.filter(l => !lines.includes(l));
@@ -87,11 +114,11 @@ function main(argv) {
     for (const l of applyRole(r, { stores, shared })) console.log('  ' + l);
     if (!r.isMain) console.log(`  open it:  cd "${r.dir}" && claude    then  /rename ${r.name}`);
   }
-  if (!dry && ensureGitignore(repo)) console.log('.gitignore: added .claude/settings.local.json and .claude/skills/*');
+  if (!dry && ensureExclude(repo)) console.log('git info/exclude: added .claude/settings.local.json and .claude/skills/* (all worktrees)');
   if (wishlist.length) console.log(`\nwishlist (not installed): ${wishlist.join(' · ')}`);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main(process.argv.slice(2));
+if (isMain(import.meta.url)) main(process.argv.slice(2));
 
 export function selftest(ok) {
   const t = mkdtempSync(join(tmpdir(), 'as-setup-'));
@@ -119,12 +146,22 @@ export function selftest(ok) {
     ok('sets role plugins', s1.enabledPlugins['p@m'] === true && s1.enabledPlugins['q@m'] === false);
     const out2 = applyRole(ui, { stores: [store], shared: [] });
     ok('idempotent', JSON.stringify(out2) === JSON.stringify(out1), JSON.stringify([out1, out2]));
-    mkdirSync(join(ui.dir, '.claude', 'skills', 'stale'), { recursive: true });
-    mkdirSync(join(ui.dir, '.claude', 'skills', 'repo-skill'), { recursive: true });
-    const out3 = applyRole(ui, { stores: [store], shared: ['repo-skill'] });
-    ok('removes skills of other roles', !existsSync(join(ui.dir, '.claude', 'skills', 'stale')) && out3.includes('- stale'));
-    ok('keeps repo-tracked skills', existsSync(join(ui.dir, '.claude', 'skills', 'repo-skill')));
-    ok('adds gitignore lines once', ensureGitignore(repo) === true && ensureGitignore(repo) === false);
+    mkdirSync(join(ui.dir, '.claude', 'skills', 'users-own'), { recursive: true });
+    const out3 = applyRole({ ...ui, skills: [] }, { stores: [store], shared: [] });
+    ok('removes only skills setup copied itself', !existsSync(join(ui.dir, '.claude', 'skills', 'taste')) && out3.includes('- taste'));
+    ok("never removes a skill it didn't copy", existsSync(join(ui.dir, '.claude', 'skills', 'users-own')));
+    const main = roles.find(r => r.isMain);
+    mkdirSync(join(repo, '.claude', 'skills', 'my-private-skill'), { recursive: true });
+    applyRole(main, { stores: [store], shared: [] });
+    ok('main checkout keeps untracked skills', existsSync(join(repo, '.claude', 'skills', 'my-private-skill')));
+    ok('excludes tool copies in every worktree, once', ensureExclude(repo) === true && ensureExclude(repo) === false
+       && !/.claude/.test(execFileSync('git', ['-C', ui.dir, 'status', '--porcelain'], { encoding: 'utf8' })));
+    ok('leaves the tracked .gitignore alone', !existsSync(join(repo, '.gitignore')));
+    mkdirSync(join(t, 'app-x', '.claude', 'skills', 'keep'), { recursive: true });
+    writeFileSync(join(repo, 'agents.json'), JSON.stringify({ main: { dir: '.' }, x: { dir: '../app-x', branch: 'agent/x' } }));
+    const x = loadAgents(repo).roles.find(r => r.name === 'x');
+    ok('refuses an existing folder that is not our worktree', (() => { try { ensureWorktree(repo, x); return false; } catch (e) { return /not a worktree/.test(e.message); } })()
+       && existsSync(join(t, 'app-x', '.claude', 'skills', 'keep')));
     mkdirSync(join(repo, '.claude', 'skills', 'ops'), { recursive: true });
     writeFileSync(join(repo, '.claude', 'skills', 'ops', 'SKILL.md'), 'ops');
     git('add', '-f', '.claude/skills/ops/SKILL.md'); git('commit', '-qm', 'ops');

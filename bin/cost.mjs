@@ -14,6 +14,7 @@ import { writeFileSync, appendFileSync, unlinkSync } from 'node:fs';   // selfte
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { isMain } from './lib/paths.mjs';
 
 // USD per 1M tokens. Cache prices are multiples of the input price.
 export const PRICES = {
@@ -160,7 +161,7 @@ export function selftest(ok) {
   ok('unknown-model rows are reported as unpriced, not priced', u.unpriced === 1 && u.usd === 0 && u.rows === 1);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (isMain(import.meta.url)) {
   const f = process.argv[2];
   if (!f) { console.error('usage: cost.mjs <session.jsonl>'); process.exit(1); }
   const t = tally(f);

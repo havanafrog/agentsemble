@@ -296,7 +296,11 @@ function paint(id, html) { if ($(id).innerHTML !== html) $(id).innerHTML = html;
 let LAST = null;
 async function tick() {
   let d;
-  try { d = await (await fetch('/api/board', { cache: 'no-store' })).json(); } catch { $('tally').textContent = 'board server not reachable'; return; }
+  try {
+    const r = await fetch('/api/board', { cache: 'no-store' });
+    if (!r.ok) { $('tally').textContent = `board error ${r.status}: ${(await r.text()).slice(0, 200)}`; return; }
+    d = await r.json();
+  } catch { $('tally').textContent = 'board server not reachable'; return; }
   LAST = d;
   const now = d.now;
   const off = d.roles.reduce((a, r) => a + [...r.kit.skills, ...r.kit.plugins].filter(i => i.st === 'miss' || i.st === 'extra').length, 0);

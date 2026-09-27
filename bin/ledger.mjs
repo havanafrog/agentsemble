@@ -8,18 +8,23 @@
 //   claim    builder says "this is true" and says how to measure it
 //   verdict  verifier ran it: confirm · refute · hold
 //   note     either side; not a verdict
-import { appendFileSync, readFileSync, existsSync, mkdirSync, rmSync, mkdtempSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { appendFileSync, readFileSync, existsSync, mkdirSync, rmSync, mkdtempSync, realpathSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { isMain } from './lib/paths.mjs';
 
 /** <repo>/ops/ledger.jsonl, or OPS_LEDGER. Resolved per call so tests and the board can point elsewhere. */
-export function ledgerPath() {
+export function ledgerPath(cwd = process.cwd()) {
   if (process.env.OPS_LEDGER) return process.env.OPS_LEDGER;
-  let root = process.cwd();
-  try { root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); }
-  catch { /* not a repo: use cwd */ }
+  // Every worktree must share one ledger: use the main checkout, found through the common .git dir.
+  // (--show-toplevel would give each worktree its own file, and main would never see sub claims.)
+  let root = cwd;
+  try {
+    const common = execFileSync('git', ['-C', cwd, 'rev-parse', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    root = dirname(realpathSync(resolve(cwd, common)));
+  } catch { /* not a repo: use cwd */ }
   return join(root, 'ops', 'ledger.jsonl');
 }
 
@@ -167,7 +172,7 @@ function main(argv) {
   ledger.mjs open | show C1 | log`);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (isMain(import.meta.url)) {
   try { main(process.argv.slice(2)); } catch (e) { console.error(e.message); process.exit(1); }
 }
 
@@ -196,6 +201,16 @@ export function selftest(ok) {
     ok('verdict on a missing claim is refused', threw(() => verdict({ id: 'C99', v: 'confirm', note: 'x' }, tmp)));
     appendFileSync(tmp, '{"id":"C3","kind":"claim"');
     ok('half-written last line is skipped', read(tmp).filter(r => r.kind === 'claim').length === 2);
+    const repo = join(dir, 'app'), wt = join(dir, 'app-ui');
+    const gx = (...a) => execFileSync('git', a, { stdio: 'ignore' });
+    mkdirSync(repo); gx('-C', repo, 'init', '-q', '-b', 'main');
+    gx('-C', repo, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'i');
+    gx('-C', repo, 'worktree', 'add', '-q', '-b', 'agent/ui', wt);
+    const old = process.env.OPS_LEDGER; delete process.env.OPS_LEDGER;
+    try {
+      ok('every worktree shares the main checkout ledger', ledgerPath(wt) === ledgerPath(repo)
+         && ledgerPath(repo) === join(realpathSync(repo), 'ops', 'ledger.jsonl'), `${ledgerPath(wt)} | ${ledgerPath(repo)}`);
+    } finally { if (old !== undefined) process.env.OPS_LEDGER = old; }
 
     const at = i => new Date(1_000_000_000_000 + i * 1000).toISOString();
     const g = ledgerGroups([

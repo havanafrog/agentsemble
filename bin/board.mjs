@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { loadAgents } from './lib/agents.mjs';
-import { projectSlug, leaf, claudeHome } from './lib/paths.mjs';
+import { projectSlug, leaf, claudeHome, isMain } from './lib/paths.mjs';
 import { kitOf } from './lib/kit.mjs';
 import { read as readLedger, open as openClaims, ledgerGroups, ledgerPath } from './ledger.mjs';
 import { tally } from './cost.mjs';
@@ -154,8 +154,10 @@ export function phaseOf(last, idle) {
 /** Sessions in one log folder. Missing folder (role never opened) → []. Broken lines are skipped. */
 export function sessions(dir, now = Date.now(), role = null, names = sessionNames()) {
   if (!dir || !existsSync(dir)) return [];
+  let files;
+  try { files = readdirSync(dir); } catch { return []; }   // unreadable (EACCES, cloud placeholder): show the rest
   const out = [];
-  for (const f of readdirSync(dir)) {
+  for (const f of files) {
     if (!f.endsWith('.jsonl')) continue;
     const file = join(dir, f);
     let st;
@@ -360,12 +362,23 @@ export function board(root, now = Date.now()) {
 const PAGE = () => readFileSync(join(HERE, 'board.html'), 'utf8');
 const LOCAL = new Set(['127.0.0.1', 'localhost', '::1']);
 
+/** Serve only requests addressed to us. Binding to 127.0.0.1 alone doesn't stop DNS rebinding:
+ *  a hostile page can point its own name at 127.0.0.1 and read transcripts. The Host header gives it away. */
+export function hostOk(host, port, extra = null) {
+  const m = /^(\[[^\]]+\]|[^:]+)(?::(\d+))?$/.exec(String(host ?? ''));
+  if (!m || Number(m[2] ?? 80) !== Number(port)) return false;
+  const name = m[1].replace(/^\[|\]$/g, '').toLowerCase();
+  return LOCAL.has(name) || (extra != null && name === String(extra).toLowerCase());
+}
+
 function main(argv) {
   const flag = (k, d) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : d; };
   const port = Number(flag('port', DEFAULT_PORT));
+  if (!Number.isInteger(port) || port < 1 || port > 65535) { console.error('--port needs a number between 1 and 65535'); process.exit(1); }
   const host = flag('host', '127.0.0.1');
   const root = git(process.cwd(), 'rev-parse', '--show-toplevel') ?? process.cwd();
   createServer((req, res) => {
+    if (!hostOk(req.headers.host, port, LOCAL.has(host) ? null : host)) return res.writeHead(403).end();
     const path = req.url.split('?')[0];
     const json = o => { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(o)); };
     try {
@@ -393,7 +406,7 @@ function main(argv) {
   });
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main(process.argv.slice(2));
+if (isMain(import.meta.url)) main(process.argv.slice(2));
 
 export function selftest(ok) {
   const D = describe;
@@ -457,6 +470,12 @@ export function selftest(ok) {
     ok('sent orders are collected', S[0].sends.length === 1 && S[0].sends[0].to === 'ui');
     ok('name falls back to the first ask', S[0].name === 'do this' && S[0].role === 'main');
     ok('missing log folder is not fatal', sessions(join(t, 'never-opened')).length === 0 && sessions(null).length === 0);
+    writeFileSync(join(t, 'not-a-dir'), 'x');
+    ok('unreadable log folder is not fatal', sessions(join(t, 'not-a-dir')).length === 0);
+    ok('only local Host headers are served (DNS rebinding)',
+       hostOk('127.0.0.1:8740', 8740) && hostOk('localhost:8740', 8740) && hostOk('[::1]:8740', 8740)
+       && !hostOk('attacker.example:8740', 8740) && !hostOk(undefined, 8740) && !hostOk('127.0.0.1:9999', 8740)
+       && hostOk('box.lan:8740', 8740, 'box.lan'));
 
     const Ss = (id, name, extra = {}) => ({ id: id.padEnd(8, '0'), name, role: null, sends: [], heard: [], ...extra });
     const tm = teamOf([

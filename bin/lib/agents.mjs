@@ -4,6 +4,9 @@ import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 
 export const AGENTS_FILE = 'agents.json';
+const SKILL = /^[\w.-]+$/;
+// A conservative subset of git's ref rules: path segments of word chars, dot, dash; no leading dash.
+const REF = /^(?!-)[\w.-]+(\/[\w.-]+)*$/;
 
 export function loadAgents(repoRoot) {
   const root = resolve(repoRoot);
@@ -24,6 +27,21 @@ export function loadAgents(repoRoot) {
       throw new Error(`role "${name}": dir must be next to the repo (like ../<name>), got ${a.dir}`);
     }
     if (!isMain && !a.branch) throw new Error(`role "${name}" needs a "branch"`);
+    // agents.json is committed, so a cloned repo can hand us any value: check shapes before any disk work.
+    if (a.branch != null && (typeof a.branch !== 'string' || !REF.test(a.branch) || a.branch.includes('..'))) {
+      throw new Error(`role "${name}": branch "${a.branch}" is not a valid branch name`);
+    }
+    if (a.skills != null && (!Array.isArray(a.skills) || a.skills.some(s => typeof s !== 'string'))) {
+      throw new Error(`role "${name}": skills must be a list of names`);
+    }
+    const badSkill = (a.skills ?? []).find(s => !SKILL.test(s) || s.includes('..'));
+    if (badSkill !== undefined) throw new Error(`role "${name}": skill name "${badSkill}" may only use letters, digits, - _ .`);
+    if (a.plugins != null && (typeof a.plugins !== 'object' || Array.isArray(a.plugins)
+        || Object.values(a.plugins).some(v => typeof v !== 'boolean'))) {
+      throw new Error(`role "${name}": plugins must be an object of name → true/false`);
+    }
+    const twin = roles.find(r => r.dir === dir);
+    if (twin) throw new Error(`roles "${twin.name}" and "${name}" use the same dir ${a.dir}`);
     roles.push({ name, dir, relDir: a.dir, branch: a.branch ?? null, what: a.what ?? '', not: a.not ?? '',
       owns: a.owns ?? [], skills: a.skills ?? [], plugins: a.plugins ?? {}, isMain });
   }
@@ -54,6 +72,16 @@ export function selftest(ok) {
     ok('dir must stay next to the repo', /next to/.test(threw(() => loadAgents(repo)) ?? ''));
     writeFileSync(join(repo, AGENTS_FILE), '{ nope');
     ok('broken json says so', /agents\.json/.test(threw(() => loadAgents(repo)) ?? ''));
+    put({ main: { dir: '.' }, ui: { dir: '../x', branch: 'b', skills: ['../../../escape'] } });
+    ok('skill names cannot climb out', /skill name/.test(threw(() => loadAgents(repo)) ?? ''));
+    put({ main: { dir: '.' }, ui: { dir: '../x', branch: 'b', skills: 'taste' } });
+    ok('skills must be a list', /skills/.test(threw(() => loadAgents(repo)) ?? ''));
+    put({ main: { dir: '.' }, ui: { dir: '../x', branch: 'b', plugins: ['p'] } });
+    ok('plugins must be an object', /plugins/.test(threw(() => loadAgents(repo)) ?? ''));
+    put({ main: { dir: '.' }, ui: { dir: '../x', branch: 'bad..branch' } });
+    ok('branch must be a valid ref', /branch/.test(threw(() => loadAgents(repo)) ?? ''));
+    put({ main: { dir: '.' }, a: { dir: '../x', branch: 'a' }, b: { dir: '../x', branch: 'b' } });
+    ok('two roles cannot share a dir', /same dir/.test(threw(() => loadAgents(repo)) ?? ''));
     rmSync(join(repo, AGENTS_FILE));
     ok('missing file says so', /not found/.test(threw(() => loadAgents(repo)) ?? ''));
   } finally { rmSync(t, { recursive: true, force: true }); }
