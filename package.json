@@ -1,0 +1,9 @@
+{
+  "name": "agentsemble",
+  "version": "0.1.0",
+  "description": "Read your repo, assemble a team of Claude Code sessions, and watch them work from one local dashboard.",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node test/run.mjs" }
+}
