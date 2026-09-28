@@ -4,15 +4,6 @@
 
 [한국어](README.ko.md)
 
-agentsemble is a Claude Code plugin. You run `/agentsemble` in a repo; Claude reads the project,
-proposes a team — one **main** session plus two to four **sub** sessions, each in its own git
-worktree with its own skills and plugins — and, once you approve, sets it up. A local board shows
-who is doing what, whether each session has the tools it should, the builder/verifier ledger, and
-what it all costs.
-
-It came out of running a real project this way: a main session that splits work, sends briefs,
-checks results and merges; a UI session; a model-training session.
-
 ## Install
 
 In Claude Code:
@@ -23,6 +14,15 @@ In Claude Code:
 ```
 
 Needs Node 20+ and git. No npm packages.
+
+agentsemble is a Claude Code plugin. You run `/agentsemble` in a repo; Claude reads the project,
+proposes a team — one **main** session plus two to four **sub** sessions, each in its own git
+worktree with its own skills and plugins — and, once you approve, sets it up. A local board shows
+who is doing what, whether each session has the tools it should, the builder/verifier ledger, and
+what it all costs.
+
+It came out of running a real project this way: a main session that splits work, sends briefs,
+checks results and merges; a UI session; a model-training session.
 
 ## Quick start
 
