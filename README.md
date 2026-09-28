@@ -37,7 +37,7 @@ checks results and merges; a UI session; a model-training session.
    your approval.**
 3. On yes it writes `agents.json`, creates the worktrees, and gives each one its skills and plugin
    switches.
-4. You open one Claude Code window per sub role (`cd ../<repo>-<role> && claude`, then
+4. You open one Claude Code window per sub role (`cd ../<repo>-team/<role> && claude`, then
    `/rename <role>`).
 5. Start the board:
 
@@ -71,7 +71,7 @@ It reads `~/.claude/projects/…` logs and `~/.claude/sessions`; it never writes
 {
   "main": { "dir": ".", "what": "split, check, merge" },
   "ui": {
-    "dir": "../myapp-ui", "branch": "agent/ui",
+    "dir": "../myapp-team/ui", "branch": "agent/ui",
     "what": "web UI", "not": "server API", "owns": ["web/"],
     "skills": ["taste"],
     "plugins": { "superpowers@claude-plugins-official": true }

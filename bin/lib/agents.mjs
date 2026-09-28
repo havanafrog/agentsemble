@@ -1,6 +1,6 @@
 // agents.json: the team plan. Committed with the code so the team has history too.
 import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve, dirname, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 
 export const AGENTS_FILE = 'agents.json';
@@ -22,8 +22,9 @@ export function loadAgents(repoRoot) {
     if (!a || typeof a.dir !== 'string') throw new Error(`role "${name}" needs a "dir"`);
     const dir = resolve(root, a.dir);
     const isMain = dir === root;
-    // Sub roles live beside the repo (same parent folder) — never somewhere else on disk.
-    if (!isMain && dirname(dir) !== parent) {
+    // Sub roles live beside the repo, or together in ../<repo>-team/ — never somewhere else on disk.
+    const inTeam = dirname(dir) === join(parent, basename(root) + '-team');
+    if (!isMain && dirname(dir) !== parent && !inTeam) {
       throw new Error(`role "${name}": dir must be next to the repo (like ../<name>), got ${a.dir}`);
     }
     if (!isMain && !a.branch) throw new Error(`role "${name}" needs a "branch"`);
@@ -70,6 +71,11 @@ export function selftest(ok) {
     ok('sub role needs a branch', /branch/.test(threw(() => loadAgents(repo)) ?? ''));
     put({ main: { dir: '.' }, ui: { dir: '../../../etc', branch: 'b' } });
     ok('dir must stay next to the repo', /next to/.test(threw(() => loadAgents(repo)) ?? ''));
+    put({ main: { dir: '.' }, ui: { dir: '../my app-team/ui', branch: 'b' } });
+    ok('team folder ../<repo>-team/<role> is allowed', threw(() => loadAgents(repo)) === null
+       && loadAgents(repo).roles.find(r => r.name === 'ui').dir === join(t, 'my app-team', 'ui'));
+    put({ main: { dir: '.' }, ui: { dir: '../other-team/ui', branch: 'b' } });
+    ok("another repo's team folder is refused", /next to/.test(threw(() => loadAgents(repo)) ?? ''));
     writeFileSync(join(repo, AGENTS_FILE), '{ nope');
     ok('broken json says so', /agents\.json/.test(threw(() => loadAgents(repo)) ?? ''));
     put({ main: { dir: '.' }, ui: { dir: '../x', branch: 'b', skills: ['../../../escape'] } });

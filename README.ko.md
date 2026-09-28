@@ -34,7 +34,7 @@ agentsemble 은 Claude Code 플러그인입니다. 저장소에서 `/agentsemble
 2. 팀 표를 제안합니다 — 역할마다 할 일, 건드리지 않을 것, 맡는 파일, 작업칸과 브랜치,
    **이미 설치된** 스킬·플러그인 중 무엇을 걸지. **여기서 멈추고 승인을 기다립니다.**
 3. 승인하면 `agents.json` 을 쓰고, 작업칸을 만들고, 역할마다 스킬과 플러그인 켜고 끄기를 겁니다.
-4. 서브 역할마다 창을 엽니다 (`cd ../<저장소>-<역할> && claude` 뒤 `/rename <역할>`).
+4. 서브 역할마다 창을 엽니다 (`cd ../<저장소>-team/<역할> && claude` 뒤 `/rename <역할>`).
 5. 판을 띄웁니다:
 
 ```
@@ -67,7 +67,7 @@ node "<플러그인 폴더>/bin/board.mjs"      →  http://127.0.0.1:8740
 {
   "main": { "dir": ".", "what": "쪼개고, 확인하고, 합친다" },
   "ui": {
-    "dir": "../myapp-ui", "branch": "agent/ui",
+    "dir": "../myapp-team/ui", "branch": "agent/ui",
     "what": "화면", "not": "서버 API", "owns": ["web/"],
     "skills": ["taste"],
     "plugins": { "superpowers@claude-plugins-official": true }

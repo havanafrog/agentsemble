@@ -44,7 +44,7 @@ One `main` plus 2-4 sub roles. For each role give:
 |---|---|
 | what / not | one line each |
 | owns | files and folders it mainly changes |
-| dir / branch | `../<repo>-<role>` and `agent/<role>` |
+| dir / branch | `../<repo>-team/<role>` and `agent/<role>` — all sub folders together in one team folder |
 | skills | chosen from what is installed, with a reason |
 | plugins | which to switch on or off for this role |
 
@@ -52,6 +52,16 @@ One `main` plus 2-4 sub roles. For each role give:
 - Tools a role needs but the human doesn't have go in `wishlist`. Never install anything.
 - Cost, one line: "Each extra session pays its own fixed context cost. If the work fits in
   ~30 minutes, say so and suggest staying solo."
+
+Under the table, list every folder setup will create, one per line, and say each is a full
+checkout of the repo:
+
+```
+Will create 3 folders next to your repo (each a full checkout):
+  ../shop-team/web   ../shop-team/api   ../shop-team/ml
+```
+
+New folders must never surprise the human.
 
 **Stop here and wait for the human to approve the table.** Do not run setup without an explicit yes.
 

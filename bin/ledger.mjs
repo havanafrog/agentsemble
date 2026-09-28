@@ -9,7 +9,7 @@
 //   verdict  verifier ran it: confirm · refute · hold
 //   note     either side; not a verdict
 import { appendFileSync, readFileSync, existsSync, mkdirSync, rmSync, mkdtempSync, realpathSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, relative, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -48,9 +48,26 @@ export function read(file = ledgerPath()) {
 }
 
 function write(row, file) {
+  const first = !existsSync(file);
   mkdirSync(dirname(file), { recursive: true });
   appendFileSync(file, JSON.stringify(row) + '\n');
+  if (first) hideFromGit(file);
   return row;
+}
+
+/** Keep the ledger out of `git status` via info/exclude — shared by all worktrees, nothing to commit. */
+function hideFromGit(file) {
+  try {
+    const dir = dirname(file);
+    const top = execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const common = resolve(dir, execFileSync('git', ['-C', dir, 'rev-parse', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim());
+    const line = '/' + relative(realpathSync(top), realpathSync(file)).split(sep).join('/');
+    const ex = join(common, 'info', 'exclude');
+    const cur = existsSync(ex) ? readFileSync(ex, 'utf8') : '';
+    if (cur.split(/\r?\n/).includes(line)) return;
+    mkdirSync(dirname(ex), { recursive: true });
+    appendFileSync(ex, (cur && !cur.endsWith('\n') ? '\n' : '') + line + '\n');
+  } catch { /* not in a repo: nothing to hide */ }
 }
 
 export function nextId(rows) {
@@ -210,6 +227,9 @@ export function selftest(ok) {
     try {
       ok('every worktree shares the main checkout ledger', ledgerPath(wt) === ledgerPath(repo)
          && ledgerPath(repo) === join(realpathSync(repo), 'ops', 'ledger.jsonl'), `${ledgerPath(wt)} | ${ledgerPath(repo)}`);
+      claim({ what: 'x', how: 'echo' }, ledgerPath(repo));
+      ok('the ledger folder does not show up in git status',
+         execFileSync('git', ['-C', repo, 'status', '--porcelain'], { encoding: 'utf8' }).trim() === '');
     } finally { if (old !== undefined) process.env.OPS_LEDGER = old; }
 
     const at = i => new Date(1_000_000_000_000 + i * 1000).toISOString();

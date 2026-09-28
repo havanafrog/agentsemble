@@ -21,8 +21,11 @@ const MARK = '.agentsemble.json';
 export function applyRole(role, { stores, shared }) {
   const out = [];
   const sk = join(role.dir, '.claude', 'skills');
-  mkdirSync(sk, { recursive: true });
   const markFile = join(sk, MARK);
+  const sf = join(role.dir, '.claude', 'settings.local.json');
+  // Nothing to give and nothing given before: leave the folder untouched.
+  if (!role.skills.length && !Object.keys(role.plugins).length && !existsSync(markFile)) return out;
+  mkdirSync(sk, { recursive: true });
   let mine = [];
   try { mine = JSON.parse(readFileSync(markFile, 'utf8')).copied ?? []; } catch { /* first run */ }
   // Take out skills this tool copied for an earlier plan. The user's own and repo-tracked ones stay.
@@ -40,7 +43,6 @@ export function applyRole(role, { stores, shared }) {
     out.push(`+ ${s}`);
   }
   writeFileSync(markFile, JSON.stringify({ copied }, null, 2) + '\n');
-  const sf = join(role.dir, '.claude', 'settings.local.json');
   let cur = {};
   if (existsSync(sf)) {
     // A hand-edited file that doesn't parse would lose the user's permissions if rewritten. Stop instead.
@@ -71,6 +73,9 @@ export function ensureWorktree(repoRoot, role) {
     { stdio: 'pipe' });
   return 'created';
 }
+
+/** Folders setup would create, so the human sees them before saying yes. */
+export const planFolders = roles => roles.filter(r => !r.isMain && !existsSync(r.dir)).map(r => r.dir);
 
 const IGNORE = ['.claude/settings.local.json', '.claude/skills/*'];
 /** Keep per-role tool copies out of git in every worktree: info/exclude is shared by all of them,
@@ -104,6 +109,11 @@ function main(argv) {
     process.exit(1);
   }
   const stores = skillStores(), shared = sharedSkills(repo);
+  if (dry) {
+    const nf = planFolders(want);
+    console.log(nf.length ? `will create ${nf.length} folder(s), each a full checkout of the repo:\n${nf.map(d => '  ' + d).join('\n')}\n`
+      : 'no new folders\n');
+  }
   for (const r of want) {
     if (dry) {
       console.log(`${r.name} → ${r.dir}  (${r.isMain || existsSync(r.dir) ? 'exists' : 'would create'})`);
@@ -151,6 +161,14 @@ export function selftest(ok) {
     ok('removes only skills setup copied itself', !existsSync(join(ui.dir, '.claude', 'skills', 'taste')) && out3.includes('- taste'));
     ok("never removes a skill it didn't copy", existsSync(join(ui.dir, '.claude', 'skills', 'users-own')));
     const main = roles.find(r => r.isMain);
+    applyRole(main, { stores: [store], shared: [] });
+    ok('a role with no skills or plugins gets no .claude folder', !existsSync(join(repo, '.claude')));
+    writeFileSync(join(repo, 'agents.json'), JSON.stringify({
+      main: { dir: '.' }, api: { dir: '../app-team/api', branch: 'agent/api' } }));
+    const api = loadAgents(repo).roles.find(r => r.name === 'api');
+    ok('plan lists the folders it will create', planFolders(loadAgents(repo).roles).join() === join(t, 'app-team', 'api'));
+    ok('creates a worktree inside the team folder', ensureWorktree(repo, api) === 'created' && existsSync(join(t, 'app-team', 'api', 'a.txt')));
+    ok('plan is empty once they exist', planFolders(loadAgents(repo).roles).length === 0);
     mkdirSync(join(repo, '.claude', 'skills', 'my-private-skill'), { recursive: true });
     applyRole(main, { stores: [store], shared: [] });
     ok('main checkout keeps untracked skills', existsSync(join(repo, '.claude', 'skills', 'my-private-skill')));
