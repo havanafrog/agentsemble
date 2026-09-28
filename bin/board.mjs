@@ -11,7 +11,7 @@
 // Read-only. Logs contain whole conversations: keep it on localhost.
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, readdirSync, statSync, openSync, readSync, closeSync,
-  mkdirSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs';
+  mkdirSync, writeFileSync, appendFileSync, rmSync, mkdtempSync } from 'node:fs';
 import { join, dirname, basename, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
@@ -92,16 +92,29 @@ export function describe(row) {
   return null;
 }
 
-/** Last lines only: logs reach tens of MB. Read the final 512 KB and split. */
-function tailLines(file, want = 400) {
-  const size = statSync(file).size;
-  const span = Math.min(size, 512 * 1024);
-  const buf = Buffer.alloc(span);
-  const h = openSync(file, 'r');
-  try { readSync(h, buf, 0, span, size - span); } finally { closeSync(h); }
-  const lines = buf.toString('utf8').split('\n');
-  if (size > span) lines.shift();                // first line was cut mid-way
-  return lines.filter(Boolean).slice(-want);
+// Per file: last result, keyed by size and mtime. The board asks every 2 s; most logs haven't moved.
+const TAIL = new Map();
+
+/** Last lines only: logs reach tens of MB. Read the final 512 KB and split — and if one huge line
+ *  (a screenshot, say) fills that window, widen it (up to 8 MB) until a few whole lines show. */
+export function tailLines(file, want = 400) {
+  const st = statSync(file);
+  const hit = TAIL.get(file);
+  if (hit && hit.size === st.size && hit.mtime === st.mtimeMs && hit.want === want) return hit.lines;
+  let lines = [];
+  for (let span = 512 * 1024; ; span *= 4) {
+    span = Math.min(st.size, span);
+    const buf = Buffer.alloc(span);
+    const h = openSync(file, 'r');
+    try { readSync(h, buf, 0, span, st.size - span); } finally { closeSync(h); }
+    lines = buf.toString('utf8').split('\n');
+    if (st.size > span) lines.shift();           // first line was cut mid-way
+    lines = lines.filter(Boolean);
+    if (lines.length >= Math.min(want, 20) || span >= st.size || span >= 8 * 1024 * 1024) break;
+  }
+  lines = lines.slice(-want);
+  TAIL.set(file, { size: st.size, mtime: st.mtimeMs, want, lines });
+  return lines;
 }
 
 /** First lines — the first thing a person asked is the best name for an unnamed window. */
@@ -436,6 +449,15 @@ export function selftest(ok) {
   const t = mkdtempSync(join(tmpdir(), 'as-board-'));
   const at = i => new Date(1_000_000_000_000 + i * 1000).toISOString();
   try {
+    const hb = join(t, 'hb.jsonl');
+    writeFileSync(hb, ['{"a":1}', '{"a":2}', '{"a":3}', JSON.stringify({ shot: 'x'.repeat(700 * 1024) })].join('\n') + '\n');
+    const tl = tailLines(hb);
+    ok('a huge last line does not hide the lines before it', tl.length === 4 && tl[0] === '{"a":1}', String(tl.length));
+    const c1 = tailLines(hb);
+    ok('unchanged file is served from cache', c1 === tl);
+    appendFileSync(hb, '{"a":5}\n');
+    ok('a grown file is read again', tailLines(hb).at(-1) === '{"a":5}');
+
     const reg = join(t, 'reg'); mkdirSync(reg);
     const put = (f, o) => writeFileSync(join(reg, f), typeof o === 'string' ? o : JSON.stringify(o));
     put('1.json', { sessionId: 'aaa', name: 'old', nameSource: 'user', updatedAt: 1 });

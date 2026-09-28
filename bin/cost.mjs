@@ -16,8 +16,15 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { isMain } from './lib/paths.mjs';
 
-// USD per 1M tokens. Cache prices are multiples of the input price.
+// USD per 1M tokens, from platform.claude.com/docs/en/about-claude/pricing (2026-09).
+// Cache prices are multiples of the input price; `read` overrides the usual 0.1x for cache hits.
 export const PRICES = {
+  'claude-fable-5-1': { in: 10, out: 50, read: 0.025 },
+  'claude-mythos-5-1': { in: 10, out: 50, read: 0.025 },
+  'claude-opus-5-5': { in: 4, out: 20, read: 0.05, fast: { in: 8, out: 40 } },
+  'claude-sonnet-5-5': { in: 2, out: 10 },
+  'claude-opus-4-5': { in: 5, out: 25 },
+  'claude-sonnet-4-5': { in: 3, out: 15 },
   'claude-opus-5': { in: 5, out: 25, fast: { in: 10, out: 50 } },
   'claude-opus-4-8': { in: 5, out: 25, fast: { in: 10, out: 50 } },
   'claude-opus-4-7': { in: 5, out: 25 },
@@ -36,9 +43,13 @@ export const WRITE_1H = 2;
 
 const M = 1_000_000;
 
+/** "claude-haiku-4-5-20251001" and "claude-opus-5[1m]" are priced as their base model. */
+export const baseModel = m => String(m ?? '').replace(/\[[^\]]*\]$/, '').replace(/-\d{8}$/, '');
+const priceOf = m => PRICES[m] ?? PRICES[baseModel(m)];
+
 /** One row's cost. Unknown model -> 0; never invent a price. */
 export function rowCost(u, model) {
-  const p = PRICES[model];
+  const p = priceOf(model);
   if (!p) return 0;
   const rate = u.speed === 'fast' && p.fast ? p.fast : p;
   // Old rows without cache_creation count as 5-minute writes.
@@ -49,7 +60,7 @@ export function rowCost(u, model) {
   return (
     (u.input_tokens ?? 0) * rate.in
     + (u.output_tokens ?? 0) * rate.out
-    + (u.cache_read_input_tokens ?? 0) * rate.in * CACHE_READ
+    + (u.cache_read_input_tokens ?? 0) * rate.in * (p.read ?? CACHE_READ)
     + w5m * rate.in * WRITE_5M
     + w1h * rate.in * WRITE_1H
   ) / M;
@@ -72,7 +83,7 @@ export function add(sum, lines) {
     sum.cacheWrite += (c.ephemeral_1h_input_tokens ?? 0)
       + (c.ephemeral_5m_input_tokens ?? u.cache_creation_input_tokens ?? 0);
     sum.usd += rowCost(u, j?.message?.model);
-    if (!PRICES[j?.message?.model]) sum.unpriced++;
+    if (!priceOf(j?.message?.model)) sum.unpriced++;
     sum.rows++;
   }
   return sum;
@@ -82,25 +93,33 @@ export function add(sum, lines) {
 const SEEN = new Map();
 
 /** Totals for one log, reading only what was appended since last time. A file that shrank was replaced: start over. */
-export function tally(file, seen = SEEN) {
+export function tally(file, seen = SEEN, chunk = 4 * 1024 * 1024) {
   let size = 0;
   try { size = statSync(file).size; } catch { return zero(); }
 
   let mark = seen.get(file);
   if (!mark || mark.at > size) mark = { at: 0, sum: zero() };
 
+  // Read in chunks so a first look at a log of tens of MB does not allocate it all at once.
+  // Count up to the last newline; after it is a line still being written.
+  // Cutting at a newline also keeps each slice valid UTF-8.
   if (size > mark.at) {
-    const span = size - mark.at;
-    const buf = Buffer.alloc(span);
     const h = openSync(file, 'r');
-    try { readSync(h, buf, 0, span, mark.at); } finally { closeSync(h); }
-    // Count up to the last newline; after it is a line still being written.
-    // Cutting at a newline also keeps the slice valid UTF-8.
-    const cut = buf.lastIndexOf(0x0a);
-    if (cut >= 0) {
-      add(mark.sum, buf.subarray(0, cut).toString('utf8').split('\n'));
-      mark.at += cut + 1;
-    }
+    try {
+      let carry = Buffer.alloc(0);
+      for (let pos = mark.at; pos < size;) {
+        const span = Math.min(chunk, size - pos);
+        const buf = Buffer.alloc(span);
+        readSync(h, buf, 0, span, pos);
+        pos += span;
+        const all = carry.length ? Buffer.concat([carry, buf]) : buf;
+        const cut = all.lastIndexOf(0x0a);
+        if (cut < 0) { carry = all; continue; }
+        add(mark.sum, all.subarray(0, cut).toString('utf8').split('\n'));
+        carry = all.subarray(cut + 1);
+        mark.at = pos - carry.length;
+      }
+    } finally { closeSync(h); }
   }
   seen.set(file, mark);
   return { ...mark.sum };
@@ -120,6 +139,12 @@ export function selftest(ok) {
   ok('unknown model costs 0', rowCost({ input_tokens: M }, '<synthetic>') === 0
      && rowCost({ input_tokens: M }, undefined) === 0);
   ok('old rows count as 5m writes', rowCost({ cache_creation_input_tokens: M }, 'claude-opus-5') === 6.25);
+  ok('opus 5.5 is priced', rowCost({ input_tokens: M, output_tokens: M }, 'claude-opus-5-5') === 24);
+  ok('opus 5.5 cache read is 0.05x', Math.abs(rowCost({ cache_read_input_tokens: M }, 'claude-opus-5-5') - 0.2) < 1e-9);
+  ok('fable 5.1 cache read is 0.025x', Math.abs(rowCost({ cache_read_input_tokens: M }, 'claude-fable-5-1') - 0.25) < 1e-9);
+  ok('opus 5.5 fast mode', rowCost({ input_tokens: M, speed: 'fast' }, 'claude-opus-5-5') === 8);
+  ok('dated and [1m] suffixes resolve', rowCost({ input_tokens: M }, 'claude-haiku-4-5-20251001') === 1
+     && rowCost({ input_tokens: M }, 'claude-opus-5[1m]') === 5);
 
   const line = (o) => JSON.stringify({ message: { model: 'claude-opus-5', usage: o } });
   const rows = Array.from({ length: 40 }, (_, i) => line({
@@ -152,6 +177,10 @@ export function selftest(ok) {
   writeFileSync(f, rows[0] + '\n');
   const fresh = tally(f, step);
   ok('a shrunken file is recounted', fresh.rows === 1, String(fresh.rows));
+
+  writeFileSync(f, rows.join('\n') + '\n');
+  const small = tally(f, new Map(), 256);        // chunk far smaller than the file, lines cross chunks
+  ok('chunked first read equals one-shot read', small.rows === 40 && Math.abs(small.usd - whole.usd) < 1e-12, `${small.rows}`);
 
   unlinkSync(f);
   const g = join(tmpdir(), `as-cost-u-${process.pid}.jsonl`);

@@ -291,21 +291,30 @@ function costHtml(d) {
     + (d.unpriced ? ` <b>${d.unpriced}</b> rows use a model with no price in <code>bin/cost.mjs</code> PRICES and count as $0.` : '') + '</p>';
 }
 
-function paint(id, html) { if ($(id).innerHTML !== html) $(id).innerHTML = html; }
+// Compare with what we last wrote, not with innerHTML — the browser re-serialises it, so that
+// comparison is almost never equal and every panel would be rebuilt (and open <details> closed) every tick.
+const PREV = {};
+function paint(id, html) { if (PREV[id] === html) return; PREV[id] = html; $(id).innerHTML = html; }
+let FAILS = 0;
 
 let LAST = null;
 async function tick() {
   let d;
   try {
     const r = await fetch('/api/board', { cache: 'no-store' });
-    if (!r.ok) { $('tally').textContent = `board error ${r.status}: ${(await r.text()).slice(0, 200)}`; return; }
+    if (!r.ok) { paint('tally', esc(`board error ${r.status}: ${(await r.text()).slice(0, 200)}`)); return; }
     d = await r.json();
-  } catch { $('tally').textContent = 'board server not reachable'; return; }
+  } catch {
+    // One missed beat is normal (a restart); say so only when it keeps failing.
+    if (++FAILS >= 3) paint('tally', 'board server not reachable — is <code>board.mjs</code> still running?');
+    return;
+  }
+  FAILS = 0;
   LAST = d;
   const now = d.now;
   const off = d.roles.reduce((a, r) => a + [...r.kit.skills, ...r.kit.plugins].filter(i => i.st === 'miss' || i.st === 'extra').length, 0);
-  $('tally').innerHTML = `<b>${d.sessions.filter(s => s.phase !== 'stopped').length}</b> active · <b>${d.open.length}</b> open claims · <b>${money(d.spend)}</b>`
-    + (off ? ` · <span class="warn">${off} tool mismatch</span>` : '');
+  paint('tally', `<b>${d.sessions.filter(s => s.phase !== 'stopped').length}</b> active · <b>${d.open.length}</b> open claims · <b>${money(d.spend)}</b>`
+    + (off ? ` · <span class="warn">${off} tool mismatch</span>` : ''));
   $('repo').textContent = [d.repo.branch, d.repo.head?.hash, d.repo.dirty.length ? d.repo.dirty.length + ' uncommitted' : '',
     d.repo.ahead ? d.repo.ahead + ' ahead' : ''].filter(Boolean).join(' · ');
   $('n-wins').textContent = d.sessions.length || '';
@@ -368,6 +377,8 @@ function closeDrawer() { $('drawer').hidden = true; OPEN_ID = null; OPENER?.focu
 $('dx').onclick = closeDrawer;
 
 tick();
-setInterval(tick, 2000);
+// A hidden tab does not need a board; catch up the moment it is shown again.
+setInterval(() => { if (!document.hidden) tick(); }, 2000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
 </script>
 </html>
