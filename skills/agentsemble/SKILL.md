@@ -14,7 +14,7 @@ Scripts live in the plugin; call them as `node "${CLAUDE_PLUGIN_ROOT}/bin/<scrip
 | `/agentsemble` | steps 0-5 below |
 | `/agentsemble status` | `status.mjs` — plan vs installed tools, per role |
 | `/agentsemble add <role>` | steps 2-4 for one extra role |
-| `/agentsemble board` | start `board.mjs`, give the URL |
+| `/agentsemble board` | start `board.mjs` in the background (it keeps running), give the URL |
 | `/ops verify` · `/ops claim` · `/ops status` | the builder/verifier ledger (ops skill) |
 
 ## 0. Check the ground
@@ -26,8 +26,9 @@ Scripts live in the plugin; call them as `node "${CLAUDE_PLUGIN_ROOT}/bin/<scrip
 ## 1. Understand the project (read only)
 
 Read: README, the tree two levels deep, language and build/test commands, the last 30 commits,
-any TODO or plan files, installed plugins (`~/.claude/settings.json` → `enabledPlugins`) and
-skills (`~/.claude/skills`, `~/.claude/skill-store`).
+any TODO or plan files. For installed plugins and skills run
+`node "${CLAUDE_PLUGIN_ROOT}/bin/inventory.mjs"` — do not read `~/.claude` by hand (a sandboxed
+session may not be allowed to, and the script also lists each plugin's skills).
 
 Show the human 5-10 lines:
 - what the project is
@@ -75,6 +76,7 @@ node "${CLAUDE_PLUGIN_ROOT}/bin/setup.mjs" --all
 ```
 
 Show its output as is — one block per role. Lines starting with `!` are skills it could not find.
+Then run `status.mjs` and show that every role says `ok`.
 
 ## 4. Open the windows
 
@@ -96,7 +98,8 @@ Tell main (this session) and put the same rules in the first message to each sub
   it will be checked, what not to touch.
 - When a sub reports, run its check yourself before merging. Record verdicts with the ops ledger
   when the claim matters.
-- Merge subs' branches into main yourself; subs never merge.
+- Merge subs' branches into main yourself; subs never merge. After merging, tell the sub the merge
+  commit in one line so it knows its work landed.
 - Never ask a sub-session to perform an action that was denied in its own window — that bypasses
   the human's permission decision. Bring it back to the human.
 - If the human is following only the main window (for example from a phone), relay sub-session
@@ -106,6 +109,8 @@ Tell main (this session) and put the same rules in the first message to each sub
 **Subs**
 - Report back with: what changed, how it was checked (commands and numbers), commit hashes.
 - Don't merge into main. Don't edit files another role owns.
+- Before starting new work, merge the latest `main` into your branch — main may have changed files
+  you are about to touch.
 - Questions and approvals go to main, not straight to the human.
 
 Finally give the board:
@@ -113,6 +118,8 @@ Finally give the board:
 ```
 node "${CLAUDE_PLUGIN_ROOT}/bin/board.mjs"      →  http://127.0.0.1:8740
 ```
+
+Start it as a background process so it does not block this session.
 
 It shows the team tree, each session's latest moves, plan-vs-installed tools, the ledger and an
 API list-price cost estimate. It is read-only and shows whole transcripts — keep it on localhost.

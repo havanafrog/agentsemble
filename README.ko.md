@@ -84,6 +84,7 @@ node "<플러그인 폴더>/bin/board.mjs"      →  http://127.0.0.1:8740
 |---|---|
 | `/agentsemble` | 파악 → 제안 → 꾸리기 → 창 열기 안내 → 운영 규칙 |
 | `/agentsemble status` | 역할마다 계획 대 실제 (`bin/status.mjs`, 어긋나면 exit 1) |
+| `node bin/inventory.mjs` | 설치된 플러그인(켜짐/꺼짐, 딸린 스킬)과 내 스킬 목록 |
 | `/agentsemble add <역할>` | 역할 하나 더 |
 | `/agentsemble board` | 판 띄우기 |
 | `/ops verify` · `/ops claim` · `/ops status` | `ops/ledger.jsonl` 장부 |

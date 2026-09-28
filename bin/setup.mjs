@@ -128,7 +128,9 @@ function main(argv) {
   if (wishlist.length) console.log(`\nwishlist (not installed): ${wishlist.join(' · ')}`);
 }
 
-if (isMain(import.meta.url)) main(process.argv.slice(2));
+if (isMain(import.meta.url)) {
+  try { main(process.argv.slice(2)); } catch (e) { console.error(e.message); process.exit(1); }
+}
 
 export function selftest(ok) {
   const t = mkdtempSync(join(tmpdir(), 'as-setup-'));

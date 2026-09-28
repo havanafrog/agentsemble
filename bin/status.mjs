@@ -4,8 +4,11 @@ import { execFileSync } from 'node:child_process';
 import { loadAgents } from './lib/agents.mjs';
 import { kitOf } from './lib/kit.mjs';
 
-const repo = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
-const { roles, wishlist } = loadAgents(repo);
+let repo, roles, wishlist;
+try {
+  repo = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  ({ roles, wishlist } = loadAgents(repo));
+} catch (e) { console.error(repo ? e.message : 'not a git repo'); process.exit(1); }
 const declared = new Set(roles.flatMap(r => r.skills));
 let bad = 0;
 for (const r of roles) {
