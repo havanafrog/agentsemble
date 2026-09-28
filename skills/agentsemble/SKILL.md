@@ -121,5 +121,5 @@ node "${CLAUDE_PLUGIN_ROOT}/bin/board.mjs"      →  http://127.0.0.1:8740
 
 Start it as a background process so it does not block this session.
 
-It shows the team tree, each session's latest moves, plan-vs-installed tools, the ledger and an
-API list-price cost estimate. It is read-only and shows whole transcripts — keep it on localhost.
+It shows the team tree, each session's latest moves, plan-vs-installed tools and the ledger.
+It is read-only and shows whole transcripts — keep it on localhost.

@@ -18,8 +18,7 @@ Needs Node 20+ and git. No npm packages.
 agentsemble is a Claude Code plugin. You run `/agentsemble` in a repo; Claude reads the project,
 proposes a team — one **main** session plus two to four **sub** sessions, each in its own git
 worktree with its own skills and plugins — and, once you approve, sets it up. A local board shows
-who is doing what, whether each session has the tools it should, the builder/verifier ledger, and
-what it all costs.
+who is doing what, whether each session has the tools it should, and the builder/verifier ledger.
 
 It came out of running a real project this way: a main session that splits work, sends briefs,
 checks results and merges; a UI session; a model-training session.
@@ -58,7 +57,7 @@ node "<plugin dir>/bin/board.mjs"        →  http://127.0.0.1:8740
 
 Five tabs: **Team** (main and its subs, the last order each sub got), **Sessions** (every session's
 latest moves; click one for its conversation), **Tools** (planned vs installed, per role —
-`missing` and `+` mark drift), **Ledger** (open claims first, finished ones folded), **Cost**.
+`missing` and `+` mark drift), **Ledger** (open claims first, finished ones folded).
 
 > **The board shows full session transcripts.** It listens on 127.0.0.1 only. `--host` lets you
 > change that and prints a warning — don't expose it.
@@ -93,15 +92,11 @@ Commit it — the team has history like the code. Schema: `agents.schema.json`.
 | `/agentsemble board` | start the board |
 | `/ops verify` · `/ops claim` · `/ops status` | builder/verifier ledger in `ops/ledger.jsonl` |
 
-## Cost
+## When not to split
 
 More sessions cost more tokens in total: each window pays its own fixed context, and subs re-read
 files main already read. You get parallel work and a lighter main context in return. For work that
 fits in about half an hour, stay solo.
-
-The Cost tab multiplies token counts from the logs by list prices in `bin/cost.mjs` (`PRICES`).
-**It is an API list-price estimate, not your bill.** Models missing from `PRICES` count as $0 and
-are shown as "unpriced" — add them there rather than trusting a guess.
 
 ## Develop
 

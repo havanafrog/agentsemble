@@ -153,14 +153,12 @@
     <button class="tab" role="tab" id="t-wins" aria-controls="p-wins" aria-selected="false">Sessions<span class="n" id="n-wins"></span></button>
     <button class="tab" role="tab" id="t-tools" aria-controls="p-tools" aria-selected="false">Tools<span class="n" id="n-tools"></span></button>
     <button class="tab" role="tab" id="t-ledger" aria-controls="p-ledger" aria-selected="false">Ledger<span class="n" id="n-ledger"></span></button>
-    <button class="tab" role="tab" id="t-cost" aria-controls="p-cost" aria-selected="false">Cost</button>
   </div>
 
   <section role="tabpanel" id="p-team" aria-labelledby="t-team"></section>
   <section role="tabpanel" id="p-wins" aria-labelledby="t-wins" hidden></section>
   <section role="tabpanel" id="p-tools" aria-labelledby="t-tools" hidden></section>
   <section role="tabpanel" id="p-ledger" aria-labelledby="t-ledger" hidden></section>
-  <section role="tabpanel" id="p-cost" aria-labelledby="t-cost" hidden></section>
 </div>
 
 <aside class="drawer" id="drawer" role="dialog" aria-modal="false" aria-labelledby="dname" hidden>
@@ -175,12 +173,10 @@ const esc = s => String(s ?? '').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&
 const cut = (t, n) => { t = String(t ?? ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 const ago = ms => ms < 60e3 ? 'just now' : ms < 3600e3 ? Math.round(ms / 60e3) + 'm ago'
   : ms < 86400e3 ? Math.round(ms / 3600e3) + 'h ago' : Math.round(ms / 86400e3) + 'd ago';
-const money = v => '$' + (v >= 100 ? v.toFixed(0) : v.toFixed(2));
-const toks = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : String(n);
 const PHASE = { moving: 'moving', waiting: 'your turn', busy: 'no reply yet', stopped: 'stopped' };
 
 // Tabs — remembered per viewer; the board is local so localStorage is fine.
-const TABS = ['team', 'wins', 'tools', 'ledger', 'cost'];
+const TABS = ['team', 'wins', 'tools', 'ledger'];
 function pick(name) {
   for (const t of TABS) {
     const on = t === name;
@@ -221,7 +217,6 @@ function card(s, now, isMain) {
     + (s.asked ? `<div class="asked"><i>asked</i>${esc(cut(s.asked, 90))}</div>` : '')
     + (steps ? `<div class="flow">${steps}</div>` : '')
     + `<div class="foot"><span>${esc(s.branch ?? '')}</span>`
-    + (s.cost ? `<span>${toks(s.cost.in + s.cost.out + s.cost.cacheRead)} tok</span><span>${money(s.cost.usd)}</span>` : '')
     + `<span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span></div></button>`;
 }
 
@@ -283,14 +278,6 @@ function ledgerHtml(g, now) {
     + '</div>';
 }
 
-function costHtml(d) {
-  const rows = [...d.sessions].sort((a, b) => (b.cost?.usd ?? 0) - (a.cost?.usd ?? 0));
-  return `<div class="card"><table><thead><tr><th scope="col">Session</th><th scope="col">Input</th><th scope="col">Output</th><th scope="col">Cache read</th><th scope="col">Cache write</th><th scope="col">USD</th></tr></thead><tbody>`
-    + rows.map(s => `<tr><td>${esc(s.name ?? s.id.slice(0, 8))}${s.role ? ' · ' + esc(s.role) : ''}</td><td>${toks(s.cost.in)}</td><td>${toks(s.cost.out)}</td><td>${toks(s.cost.cacheRead)}</td><td>${toks(s.cost.cacheWrite)}</td><td>${money(s.cost.usd)}</td></tr>`).join('')
-    + `</tbody></table></div><p class="fine">API list-price estimate, not your bill — subscriptions are billed differently.`
-    + (d.unpriced ? ` <b>${d.unpriced}</b> rows use a model with no price in <code>bin/cost.mjs</code> PRICES and count as $0.` : '') + '</p>';
-}
-
 // Compare with what we last wrote, not with innerHTML — the browser re-serialises it, so that
 // comparison is almost never equal and every panel would be rebuilt (and open <details> closed) every tick.
 const PREV = {};
@@ -313,7 +300,7 @@ async function tick() {
   LAST = d;
   const now = d.now;
   const off = d.roles.reduce((a, r) => a + [...r.kit.skills, ...r.kit.plugins].filter(i => i.st === 'miss' || i.st === 'extra').length, 0);
-  paint('tally', `<b>${d.sessions.filter(s => s.phase !== 'stopped').length}</b> active · <b>${d.open.length}</b> open claims · <b>${money(d.spend)}</b>`
+  paint('tally', `<b>${d.sessions.filter(s => s.phase !== 'stopped').length}</b> active · <b>${d.open.length}</b> open claims`
     + (off ? ` · <span class="warn">${off} tool mismatch</span>` : ''));
   $('repo').textContent = [d.repo.branch, d.repo.head?.hash, d.repo.dirty.length ? d.repo.dirty.length + ' uncommitted' : '',
     d.repo.ahead ? d.repo.ahead + ' ahead' : ''].filter(Boolean).join(' · ');
@@ -324,7 +311,6 @@ async function tick() {
   paint('p-wins', winsHtml(d, now));
   paint('p-tools', toolsHtml(d));
   paint('p-ledger', ledgerHtml(d.groups, now));
-  paint('p-cost', costHtml(d));
 }
 
 // Copy the resume command; where the clipboard is blocked, show it to copy by hand.

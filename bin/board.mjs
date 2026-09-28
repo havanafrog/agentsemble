@@ -20,7 +20,6 @@ import { loadAgents } from './lib/agents.mjs';
 import { projectSlug, leaf, claudeHome, isMain } from './lib/paths.mjs';
 import { kitOf } from './lib/kit.mjs';
 import { read as readLedger, open as openClaims, ledgerGroups, ledgerPath } from './ledger.mjs';
-import { tally } from './cost.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_PORT = 8740;
@@ -234,7 +233,6 @@ export function sessions(dir, now = Date.now(), role = null, names = sessionName
       cwd: rows.find(r => r.cwd)?.cwd ?? null,
       turns: rows.filter(r => r.type === 'assistant').length,
       phase: phaseOf(last, idle), idleMs: idle, last, steps, asked,
-      cost: tally(file),
     });
   }
   return out.sort((a, b) => a.idleMs - b.idleMs);
@@ -360,11 +358,9 @@ export function board(root, now = Date.now()) {
   for (const s of sess) { delete s.sends; delete s.heard; }
   const lf = ledgerPath();
   const all = readLedger(lf);
-  const unpriced = sess.reduce((a, s) => a + (s.cost?.unpriced ?? 0), 0);
   return {
     now, roles: views, sessions: sess, team, talk,
     live: liveSessions(sessionDir(), new Set(sess.map(s => s.id))),
-    spend: sess.reduce((a, s) => a + (s.cost?.usd ?? 0), 0), unpriced,
     repo: repoState(root),
     open: openClaims(lf), groups: ledgerGroups(all),
     counts: { claims: all.filter(r => r.kind === 'claim').length, verdicts: all.filter(r => r.kind === 'verdict').length },
@@ -544,7 +540,7 @@ export function selftest(ok) {
       const ui = bd.roles.find(r => r.name === 'ui');
       ok('role whose window was never opened is shown, not fatal', ui && ui.sessionIds.length === 0 && ui.kit.skills[0].st === 'plan');
       ok('log dir comes from the role path', ui.logDir.endsWith(projectSlug(join(t, 'app-ui'))));
-      ok('board carries repo, ledger, spend', bd.repo.branch === 'main' && Array.isArray(bd.open) && bd.spend === 0 && bd.groups);
+      ok('board carries repo and ledger', bd.repo.branch === 'main' && Array.isArray(bd.open) && bd.groups);
       rmSync(join(repo, 'agents.json'));
       ok('no agents.json: repo alone as main', board(repo).roles.map(r => r.name).join() === 'main');
     } finally {
