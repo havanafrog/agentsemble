@@ -18,7 +18,7 @@ for (const r of roles) {
   bad += off.length;
   console.log(`${r.name.padEnd(8)} ${off.length ? off.map(i => (i.st === 'miss' ? 'missing ' : 'extra ') + i.name).join(', ') : 'ok'}`
     + (k.skills.some(i => i.st === 'plan') ? '  (not set up yet — node bin/setup.mjs ' + r.name + ')' : '')
-    + `  [${r.autonomy}${r.model && !off.some(i => i.name.startsWith('model')) ? ' · ' + r.model : ''}]`
+    + `  [${r.shared ? 'shares main folder · ' : ''}${r.autonomy}${r.model && !off.some(i => i.name.startsWith('model')) ? ' · ' + r.model : ''}]`
     + (k.shared.length ? `  [repo skills: ${k.shared.join(', ')}]` : ''));
 }
 if (wishlist.length) console.log(`wishlist: ${wishlist.join(' · ')}`);

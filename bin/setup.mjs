@@ -20,6 +20,7 @@ const MARK = '.agentsemble.json';
 /** Put a role's skills and plugins into its worktree. Returns human-readable lines. */
 export function applyRole(role, { stores, shared }) {
   const out = [];
+  if (role.shared) return out;              // works in the main folder with main's tools
   const sk = join(role.dir, '.claude', 'skills');
   const markFile = join(sk, MARK);
   const sf = join(role.dir, '.claude', 'settings.local.json');
@@ -65,6 +66,7 @@ const commonDir = dir => realpathSync(resolve(dir, gitOut(dir, 'rev-parse', '--g
 
 export function ensureWorktree(repoRoot, role) {
   if (role.isMain) return 'exists';
+  if (role.shared) return 'shares main folder';
   if (existsSync(role.dir)) {
     // Only reuse a folder that is a worktree of this repo — never someone else's project next door.
     let same = false;
@@ -79,7 +81,7 @@ export function ensureWorktree(repoRoot, role) {
 }
 
 /** Folders setup would create, so the human sees them before saying yes. */
-export const planFolders = roles => roles.filter(r => !r.isMain && !existsSync(r.dir)).map(r => r.dir);
+export const planFolders = roles => roles.filter(r => !r.isMain && !r.shared && !existsSync(r.dir)).map(r => r.dir);
 
 const IGNORE = ['.claude/settings.local.json', '.claude/skills/*'];
 /** Keep per-role tool copies out of git in every worktree: info/exclude is shared by all of them,
@@ -126,7 +128,8 @@ function main(argv) {
     }
     console.log(`${r.name} → ${r.dir}  (${ensureWorktree(repo, r)})`);
     for (const l of applyRole(r, { stores, shared })) console.log('  ' + l);
-    if (!r.isMain) console.log(`  open it:  cd "${r.dir}" && claude    then  /rename ${r.name}`);
+    // A shared role has no settings file of its own, so its model goes on the command line.
+    if (!r.isMain) console.log(`  open it:  cd "${r.dir}" && claude${r.shared && r.model ? ' --model ' + r.model : ''}    then  /rename ${r.name}`);
   }
   if (!dry && ensureExclude(repo)) console.log('git info/exclude: added .claude/settings.local.json and .claude/skills/* (all worktrees)');
   if (wishlist.length) console.log(`\nwishlist (not installed): ${wishlist.join(' · ')}`);
@@ -178,6 +181,9 @@ export function selftest(ok) {
       main: { dir: '.' }, api: { dir: '../app-team/api', branch: 'agent/api' } }));
     const api = loadAgents(repo).roles.find(r => r.name === 'api');
     ok('plan lists the folders it will create', planFolders(loadAgents(repo).roles).join() === join(t, 'app-team', 'api'));
+    const rev = { name: 'review', shared: true, isMain: false, dir: repo, branch: null, skills: [], plugins: {}, model: 'opus' };
+    ok('a shared role gets no folder', ensureWorktree(repo, rev) === 'shares main folder' && planFolders([rev]).length === 0);
+    ok('a shared role leaves the main .claude alone', applyRole(rev, { stores: [store], shared: [] }).length === 0 && !existsSync(join(repo, '.claude')));
     ok('creates a worktree inside the team folder', ensureWorktree(repo, api) === 'created' && existsSync(join(t, 'app-team', 'api', 'a.txt')));
     ok('plan is empty once they exist', planFolders(loadAgents(repo).roles).length === 0);
     mkdirSync(join(repo, '.claude', 'skills', 'my-private-skill'), { recursive: true });

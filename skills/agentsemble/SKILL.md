@@ -52,11 +52,18 @@ One `main` plus 2-4 sub roles. For each role give:
 |---|---|
 | what / not | one line each |
 | owns | files and folders it mainly changes |
-| dir / branch | `../<repo>-team/<role>` and `agent/<role>` — all sub folders together in one team folder |
+| dir / branch | `../<repo>-team/<role>` and `agent/<role>` — all sub folders together in one team folder. A role that never edits files gets `"shared": true` instead (see below) |
 | skills | chosen from what is installed, with a reason |
 | plugins | which to switch on or off for this role |
 | model | the model tier, with a reason (see below) |
 | autonomy | `ask` · `build` · `run` — how far it goes before checking in (see below) |
+
+**Folders only where needed.** A folder (worktree) exists so two sessions editing at once don't
+overwrite each other — the way each developer on a team works in their own checkout. So only
+roles that **change files** get one. A role that only reads — reviewing, verifying, researching,
+watching logs — is `"shared": true`: no folder, no branch, it opens in the main folder and uses
+main's skills and plugins (its `model` goes on the launch command). Say which roles are shared
+and why, next to the folder list.
 
 **Model tier.** Match the model to the judgment the role needs, not to its importance:
 - main, and any role that verifies others' work → the strongest model (`opus`). Splitting work,

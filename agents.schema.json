@@ -8,9 +8,10 @@
   },
   "additionalProperties": {
     "type": "object",
-    "required": ["dir"],
+    "anyOf": [{ "required": ["dir"] }, { "required": ["shared"] }],
     "additionalProperties": false,
     "properties": {
+      "shared": { "const": true, "description": "A role that only reads (review, research, watching logs): no folder of its own, works in the main folder with main's skills and plugins. Give it no dir, branch, skills or plugins." },
       "dir": { "type": "string", "description": "\".\" for main, \"../<repo>-team/<role>\" (or the older \"../<repo>-<role>\") for a sub role." },
       "branch": { "type": "string", "description": "Branch the sub role's worktree works on. Required for sub roles." },
       "what": { "type": "string" },

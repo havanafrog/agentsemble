@@ -39,7 +39,7 @@ export function kitOf(role, declared) {
     return now === true ? [{ name, st: 'extra' }] : [];
   });
   // model: undefined = settings not readable (plan), else what the worktree runs.
-  const model = !role.model ? null
+  const model = !role.model || role.shared ? null
     : { name: role.model, now: got.model ?? null, st: got.model === undefined ? 'plan' : got.model === role.model ? 'ok' : 'miss' };
   return { skills, plugins, shared, model };
 }
@@ -73,6 +73,7 @@ export function selftest(ok) {
     writeFileSync(join(sub, '.claude', 'settings.local.json'), JSON.stringify({ model: 'opus' }));
     ok('a different model is miss', kitOf({ ...R('sub'), model: 'sonnet' }, declared).model?.st === 'miss');
     ok('the planned model is ok', kitOf({ ...R('sub'), model: 'opus' }, declared).model?.st === 'ok');
+    ok("a shared role's model is not checked against the folder (it is a launch flag)", kitOf({ ...R('main'), name: 'rev', isMain: false, shared: true, model: 'haiku' }, declared).model === null);
     ok('unreadable .claude means plan, not a crash',
        kitOf({ ...R('sub'), dir: join(t, 'does-not-exist') }, declared).skills.every(s => s.st === 'plan'));
   } finally { rmSync(t, { recursive: true, force: true }); }

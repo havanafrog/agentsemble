@@ -344,13 +344,22 @@ function rolesOf(root) {
   catch { return [{ name: 'main', dir: resolve(root), branch: null, what: '', skills: [], plugins: {}, isMain: true }]; }
 }
 
+/** Shared roles work in the main folder, so their windows land in main's log folder.
+ *  A window renamed (/rename) to a shared role's name is that role's. */
+export function claimShared(sess, sharedNames) {
+  for (const s of sess) if (s.role && sharedNames.includes(s.name)) s.role = s.name;
+  return sess;
+}
+
 export function board(root, now = Date.now()) {
   const roles = rolesOf(root);
   const names = sessionNames();
   const declared = new Set(roles.flatMap(r => r.skills));
   const views = roles.map(r => ({ name: r.name, dir: r.dir, branch: r.branch, what: r.what, model: r.model, autonomy: r.autonomy,
-    isMain: r.isMain, logDir: logDirOf(r.dir), kit: kitOf(r, declared) }));
-  const sess = views.flatMap(v => sessions(v.logDir, now, v.name, names)).sort((a, b) => a.idleMs - b.idleMs);
+    isMain: r.isMain, shared: !!r.shared, logDir: logDirOf(r.dir), kit: kitOf(r, declared) }));
+  // A shared role has no log folder of its own: read main's once, then hand its windows out.
+  const sess = claimShared(views.filter(v => !v.shared).flatMap(v => sessions(v.logDir, now, v.name, names)),
+    views.filter(v => v.shared).map(v => v.name)).sort((a, b) => a.idleMs - b.idleMs);
   for (const v of views) v.sessionIds = sess.filter(s => s.role === v.name).map(s => s.id);
   const talk = sess.flatMap(s => s.sends.map(m => ({ ...m, from: s.name || s.id.slice(0, 8), role: s.role })))
     .sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 60);
@@ -487,6 +496,9 @@ export function selftest(ok) {
        && S[0].steps.every((s, i) => i === 0 || s.at >= S[0].steps[i - 1].at));
     ok('sent orders are collected', S[0].sends.length === 1 && S[0].sends[0].to === 'ui');
     ok('name falls back to the first ask', S[0].name === 'do this' && S[0].role === 'main');
+    const shs = [{ id: 'a', name: 'review', role: 'main' }, { id: 'b', name: 'main', role: 'main' }, { id: 'c', name: null, role: 'main' }];
+    claimShared(shs, ['review']);
+    ok('a window renamed to a shared role belongs to that role', shs.map(s => s.role).join() === 'review,main,main');
     ok('missing log folder is not fatal', sessions(join(t, 'never-opened')).length === 0 && sessions(null).length === 0);
     writeFileSync(join(t, 'not-a-dir'), 'x');
     ok('unreadable log folder is not fatal', sessions(join(t, 'not-a-dir')).length === 0);

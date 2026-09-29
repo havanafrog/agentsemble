@@ -26,7 +26,22 @@ export function loadAgents(repoRoot) {
   const roles = [];
   for (const [name, a] of Object.entries(raw)) {
     if (name.startsWith('$') || name === 'wishlist') continue;
-    if (!a || typeof a.dir !== 'string') throw new Error(`role "${name}" needs a "dir"`);
+    // A role that only reads (review, research, watching logs) needs no folder of its own: it works
+    // in the main folder, so it also runs with main's skills and plugins.
+    if (a?.shared === true) {
+      if (a.dir != null || a.branch != null) throw new Error(`role "${name}" is shared (works in the main folder) — drop its "dir" and "branch"`);
+      if ((a.skills ?? []).length || Object.keys(a.plugins ?? {}).length) {
+        throw new Error(`role "${name}" is shared, so it uses main's skills and plugins — move them to main or give the role its own folder`);
+      }
+      if (a.model != null && (typeof a.model !== 'string' || !MODEL.test(a.model))) {
+        throw new Error(`role "${name}": model "${a.model}" should be a name like opus, sonnet, haiku or claude-sonnet-5`);
+      }
+      if (a.autonomy != null && !AUTONOMY.includes(a.autonomy)) throw new Error(`role "${name}": autonomy must be one of ${AUTONOMY.join(', ')}`);
+      roles.push({ name, dir: root, relDir: '.', branch: null, what: a.what ?? '', not: a.not ?? '', owns: a.owns ?? [],
+        skills: [], plugins: {}, isMain: false, shared: true, model: a.model ?? null, autonomy: a.autonomy ?? 'build' });
+      continue;
+    }
+    if (!a || typeof a.dir !== 'string') throw new Error(`role "${name}" needs a "dir" (or "shared": true to work in the main folder)`);
     const dir = resolve(root, a.dir);
     const isMain = dir === root;
     // Sub roles live beside the repo, or together in ../<repo>-team/ — never somewhere else on disk.
@@ -54,10 +69,10 @@ export function loadAgents(repoRoot) {
     if (a.autonomy != null && !AUTONOMY.includes(a.autonomy)) {
       throw new Error(`role "${name}": autonomy must be one of ${AUTONOMY.join(', ')}`);
     }
-    const twin = roles.find(r => r.dir === dir);
+    const twin = roles.find(r => r.dir === dir && !r.shared);
     if (twin) throw new Error(`roles "${twin.name}" and "${name}" use the same dir ${a.dir}`);
     roles.push({ name, dir, relDir: a.dir, branch: a.branch ?? null, what: a.what ?? '', not: a.not ?? '',
-      owns: a.owns ?? [], skills: a.skills ?? [], plugins: a.plugins ?? {}, isMain,
+      owns: a.owns ?? [], skills: a.skills ?? [], plugins: a.plugins ?? {}, isMain, shared: false,
       model: a.model ?? null, autonomy: a.autonomy ?? 'build' });
   }
   const mains = roles.filter(r => r.isMain);
@@ -92,6 +107,14 @@ export function selftest(ok) {
     const ma = loadAgents(repo).roles;
     ok('model and autonomy are read', ma[0].model === 'opus' && ma[1].model === 'sonnet' && ma[1].autonomy === 'ask');
     ok('autonomy defaults to build, model to none', (put({ main: { dir: '.' } }), loadAgents(repo).roles[0].autonomy === 'build' && loadAgents(repo).roles[0].model === null));
+    put({ main: { dir: '.' }, review: { shared: true, model: 'opus', what: 'reads and checks' } });
+    const sh = loadAgents(repo).roles.find(r => r.name === 'review');
+    ok('a shared role works in the main folder, is not main, needs no branch',
+       sh && sh.shared && !sh.isMain && sh.dir === resolve(repo) && sh.branch === null);
+    put({ main: { dir: '.' }, review: { shared: true, skills: ['taste'] } });
+    ok('a shared role cannot have its own skills or plugins', /shared/.test(threw(() => loadAgents(repo)) ?? ''));
+    put({ main: { dir: '.' }, review: { shared: true, dir: '../x', branch: 'b' } });
+    ok('a shared role cannot have a folder', /shared/.test(threw(() => loadAgents(repo)) ?? ''));
     put({ main: { dir: '.', autonomy: 'yolo' } });
     ok('unknown autonomy is refused', /autonomy/.test(threw(() => loadAgents(repo)) ?? ''));
     put({ main: { dir: '.', model: 'opus; rm -rf' } });

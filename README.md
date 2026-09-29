@@ -77,9 +77,13 @@ It reads `~/.claude/projects/…` logs and `~/.claude/sessions`; it never writes
     "plugins": { "superpowers@claude-plugins-official": true },
     "model": "sonnet", "autonomy": "build"
   },
+  "review": { "shared": true, "what": "reads and checks others' work", "model": "opus" },
   "wishlist": ["a browser-measuring skill"]
 }
 ```
+
+Only roles that change files get a folder. A role that only reads (review, research) is
+`"shared": true` — it opens in the main folder with main's tools.
 
 `model` picks the window's model (strongest for main and verifiers, mid for implementers, light for
 watchers). `autonomy` is how far a role goes before checking in: `ask` (plan first), `build`

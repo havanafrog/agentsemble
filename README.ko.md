@@ -74,9 +74,13 @@ node "<플러그인 폴더>/bin/board.mjs"      →  http://127.0.0.1:8740
     "plugins": { "superpowers@claude-plugins-official": true },
     "model": "sonnet", "autonomy": "build"
   },
+  "review": { "shared": true, "what": "남의 작업을 읽고 확인", "model": "opus" },
   "wishlist": ["브라우저로 재는 스킬"]
 }
 ```
+
+파일을 고치는 역할만 폴더를 받습니다. 읽기만 하는 역할(검토, 조사)은 `"shared": true` —
+main 폴더에서 main 의 도구로 엽니다.
 
 `model` 은 창의 모델(main·검증 역할은 가장 센 것, 구현은 중간, 지켜보기만 하면 가벼운 것),
 `autonomy` 는 확인받기 전 어디까지 하는지: `ask`(계획부터 보여 줌) · `build`(기본: 고치고
