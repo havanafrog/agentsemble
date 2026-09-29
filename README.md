@@ -56,7 +56,7 @@ node "<plugin dir>/bin/board.mjs"        →  http://127.0.0.1:8740
 
 ## The board
 
-Five tabs: **Team** (main and its subs, the last order each sub got), **Sessions** (every session's
+Four tabs: **Team** (main and its subs, the last order each sub got), **Sessions** (every session's
 latest moves; click one for its conversation), **Tools** (planned vs installed, per role —
 `missing` and `+` mark drift), **Ledger** (open claims first, finished ones folded).
 
