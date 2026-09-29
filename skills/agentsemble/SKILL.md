@@ -19,7 +19,14 @@ Scripts live in the plugin; call them as `node "${CLAUDE_PLUGIN_ROOT}/bin/<scrip
 
 ## 0. Check the ground
 
-- Not a git repo → stop and suggest `git init` (with a first commit — worktrees need one).
+- Not a git repo, or a repo with no commit yet → the human may never have used git. Explain in
+  one or two plain lines why the team needs it (each session gets its own copy to work in, and
+  main merges their work back), then ask: "Make this folder a git repo and save a first snapshot?"
+  On yes run `node "${CLAUDE_PLUGIN_ROOT}/bin/init.mjs"`. It runs `git init`, adds a starter
+  `.gitignore` (node_modules, .env, logs …) only when none exists, and makes the first commit.
+  It stops and lists files that look like secrets or are over 50 MB — show that list and let the
+  human choose; never add them yourself. If git is missing it says where to install it.
+  On no, stop.
 - `agents.json` already exists → do not redesign. Run `status.mjs`, show the result, and ask
   whether they want `add`, a redesign, or nothing.
 

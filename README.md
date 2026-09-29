@@ -13,7 +13,8 @@ In Claude Code:
 /plugin install agentsemble@agentsemble
 ```
 
-Needs Node 20+ and git. No npm packages.
+Needs Node 20+ and git (install git; you don't need to know it — if the folder is not a git repo yet,
+`/agentsemble` offers to set it up and make the first commit). No npm packages.
 
 agentsemble is a Claude Code plugin. You run `/agentsemble` in a repo; Claude reads the project,
 proposes a team — one **main** session plus two to four **sub** sessions, each in its own git
@@ -104,7 +105,7 @@ fits in about half an hour, stay solo.
 node test/run.mjs
 ```
 
-Every module has a selftest; CI runs them on Windows, macOS and Linux with Node 20 and 22.
+Every module has a selftest: `node test/run.mjs`. A GitHub Actions setup for Windows, macOS and Linux is in `docs/ci.yml.example`.
 
 ## License
 

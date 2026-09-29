@@ -13,7 +13,8 @@ Claude Code 에서:
 /plugin install agentsemble@agentsemble
 ```
 
-Node 20 이상과 git 이 필요합니다. npm 패키지는 없습니다.
+Node 20 이상과 git 이 필요합니다(설치만 하면 됩니다 — 폴더가 아직 git 저장소가 아니면
+`/agentsemble` 이 만들어 주고 첫 커밋까지 해 줍니다). npm 패키지는 없습니다.
 
 agentsemble 은 Claude Code 플러그인입니다. 저장소에서 `/agentsemble` 을 부르면 Claude 가 과제를
 읽고 팀을 제안합니다 — **main** 창 하나와 **서브** 창 2~4개, 서브마다 자기 git worktree 와 자기
@@ -100,7 +101,7 @@ node "<플러그인 폴더>/bin/board.mjs"      →  http://127.0.0.1:8740
 node test/run.mjs
 ```
 
-모든 모듈에 자체 점검이 있고, CI 가 Windows·macOS·Linux × Node 20·22 에서 돌립니다.
+모든 모듈에 자체 점검이 있습니다: `node test/run.mjs`. Windows·macOS·Linux 용 GitHub Actions 설정은 `docs/ci.yml.example` 에 있습니다.
 
 ## 라이선스
 
