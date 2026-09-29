@@ -254,6 +254,8 @@ function toolsHtml(d) {
     const k = r.kit;
     const setUp = !k.skills.some(i => i.st === 'plan');
     return `<div class="kit"><span class="who">${esc(r.name)}</span>`
+      + (k.model ? item('plug', { ...k.model, name: 'model ' + k.model.name }) : '')
+      + (r.autonomy ? `<span class="i shared" title="how far this role goes before checking in">${esc(r.autonomy)}</span>` : '')
       + k.skills.map(i => item('', i)).join('') + k.plugins.map(i => item('plug', i)).join('')
       + k.shared.map(s => `<span class="i shared" title="tracked by the repo; every role has it">${esc(s)}</span>`).join('')
       + (setUp ? '' : `<span class="note">not set up — node bin/setup.mjs ${esc(r.name)}</span>`) + '</div>';

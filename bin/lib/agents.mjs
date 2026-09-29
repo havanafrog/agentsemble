@@ -7,6 +7,13 @@ export const AGENTS_FILE = 'agents.json';
 const SKILL = /^[\w.-]+$/;
 // A conservative subset of git's ref rules: path segments of word chars, dot, dash; no leading dash.
 const REF = /^(?!-)[\w.-]+(\/[\w.-]+)*$/;
+// An alias (opus, sonnet, haiku) or a model id, optionally with a [1m]-style suffix.
+const MODEL = /^[\w.-]+(\[\w+\])?$/;
+/** How far a role goes before checking in:
+ *   ask   — send main a plan and wait before changing code
+ *   build — change, test and commit on its own branch, then report (default)
+ *   run   — keep going through fix/test loops without check-ins; report once at the end */
+export const AUTONOMY = ['ask', 'build', 'run'];
 
 export function loadAgents(repoRoot) {
   const root = resolve(repoRoot);
@@ -41,10 +48,17 @@ export function loadAgents(repoRoot) {
         || Object.values(a.plugins).some(v => typeof v !== 'boolean'))) {
       throw new Error(`role "${name}": plugins must be an object of name → true/false`);
     }
+    if (a.model != null && (typeof a.model !== 'string' || !MODEL.test(a.model))) {
+      throw new Error(`role "${name}": model "${a.model}" should be a name like opus, sonnet, haiku or claude-sonnet-5`);
+    }
+    if (a.autonomy != null && !AUTONOMY.includes(a.autonomy)) {
+      throw new Error(`role "${name}": autonomy must be one of ${AUTONOMY.join(', ')}`);
+    }
     const twin = roles.find(r => r.dir === dir);
     if (twin) throw new Error(`roles "${twin.name}" and "${name}" use the same dir ${a.dir}`);
     roles.push({ name, dir, relDir: a.dir, branch: a.branch ?? null, what: a.what ?? '', not: a.not ?? '',
-      owns: a.owns ?? [], skills: a.skills ?? [], plugins: a.plugins ?? {}, isMain });
+      owns: a.owns ?? [], skills: a.skills ?? [], plugins: a.plugins ?? {}, isMain,
+      model: a.model ?? null, autonomy: a.autonomy ?? 'build' });
   }
   const mains = roles.filter(r => r.isMain);
   if (mains.length !== 1) throw new Error(`${AGENTS_FILE} needs exactly one main role (dir ".") — found ${mains.length}`);
@@ -74,6 +88,14 @@ export function selftest(ok) {
     put({ main: { dir: '.' }, ui: { dir: '../my app-team/ui', branch: 'b' } });
     ok('team folder ../<repo>-team/<role> is allowed', threw(() => loadAgents(repo)) === null
        && loadAgents(repo).roles.find(r => r.name === 'ui').dir === join(t, 'my app-team', 'ui'));
+    put({ main: { dir: '.', model: 'opus' }, ui: { dir: '../x', branch: 'b', model: 'sonnet', autonomy: 'ask' } });
+    const ma = loadAgents(repo).roles;
+    ok('model and autonomy are read', ma[0].model === 'opus' && ma[1].model === 'sonnet' && ma[1].autonomy === 'ask');
+    ok('autonomy defaults to build, model to none', (put({ main: { dir: '.' } }), loadAgents(repo).roles[0].autonomy === 'build' && loadAgents(repo).roles[0].model === null));
+    put({ main: { dir: '.', autonomy: 'yolo' } });
+    ok('unknown autonomy is refused', /autonomy/.test(threw(() => loadAgents(repo)) ?? ''));
+    put({ main: { dir: '.', model: 'opus; rm -rf' } });
+    ok('odd model names are refused', /model/.test(threw(() => loadAgents(repo)) ?? ''));
     put({ main: { dir: '.' }, ui: { dir: '../other-team/ui', branch: 'b' } });
     ok("another repo's team folder is refused", /next to/.test(threw(() => loadAgents(repo)) ?? ''));
     writeFileSync(join(repo, AGENTS_FILE), '{ nope');

@@ -1,6 +1,6 @@
 {
   "name": "agentsemble",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Read your repo, assemble a team of Claude Code sessions, and watch them work from one local dashboard.",
   "type": "module",
   "license": "MIT",

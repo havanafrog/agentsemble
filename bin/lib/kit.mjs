@@ -6,14 +6,14 @@ import { loadAgents } from './agents.mjs';
 
 /** What a worktree's .claude has. null where it can't be read — callers show the plan only. */
 function installed(claudeDir) {
-  let skills = null, plugins = null;
+  let skills = null, plugins = null, model;
   try {
     skills = readdirSync(join(claudeDir, 'skills'), { withFileTypes: true })
       .filter(d => d.isDirectory()).map(d => d.name);
   } catch { /* not set up yet, or not visible */ }
-  try { plugins = JSON.parse(readFileSync(join(claudeDir, 'settings.local.json'), 'utf8')).enabledPlugins ?? {}; }
+  try { const j = JSON.parse(readFileSync(join(claudeDir, 'settings.local.json'), 'utf8')); plugins = j.enabledPlugins ?? {}; model = j.model ?? null; }
   catch { /* no file: global settings apply */ }
-  return { skills, plugins };
+  return { skills, plugins, model };
 }
 
 /**
@@ -38,7 +38,10 @@ export function kitOf(role, declared) {
     if (on) return [{ name, st: now === true ? 'ok' : 'miss' }];
     return now === true ? [{ name, st: 'extra' }] : [];
   });
-  return { skills, plugins, shared };
+  // model: undefined = settings not readable (plan), else what the worktree runs.
+  const model = !role.model ? null
+    : { name: role.model, now: got.model ?? null, st: got.model === undefined ? 'plan' : got.model === role.model ? 'ok' : 'miss' };
+  return { skills, plugins, shared, model };
 }
 
 export function selftest(ok) {
@@ -66,6 +69,10 @@ export function selftest(ok) {
     ok('plugin that should be off but is on is extra', st(k.plugins).q === 'extra');
     const m = kitOf(R('main'), declared);
     ok('no settings file means plugins are plan', st(m.plugins).p === 'plan' && st(m.skills).m1 === 'ok');
+    ok('no planned model means no model item', k.model === null);
+    writeFileSync(join(sub, '.claude', 'settings.local.json'), JSON.stringify({ model: 'opus' }));
+    ok('a different model is miss', kitOf({ ...R('sub'), model: 'sonnet' }, declared).model?.st === 'miss');
+    ok('the planned model is ok', kitOf({ ...R('sub'), model: 'opus' }, declared).model?.st === 'ok');
     ok('unreadable .claude means plan, not a crash',
        kitOf({ ...R('sub'), dir: join(t, 'does-not-exist') }, declared).skills.every(s => s.st === 'plan'));
   } finally { rmSync(t, { recursive: true, force: true }); }

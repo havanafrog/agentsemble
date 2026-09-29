@@ -24,10 +24,10 @@ export function applyRole(role, { stores, shared }) {
   const markFile = join(sk, MARK);
   const sf = join(role.dir, '.claude', 'settings.local.json');
   // Nothing to give and nothing given before: leave the folder untouched.
-  if (!role.skills.length && !Object.keys(role.plugins).length && !existsSync(markFile)) return out;
+  if (!role.skills.length && !Object.keys(role.plugins).length && !role.model && !existsSync(markFile)) return out;
   mkdirSync(sk, { recursive: true });
-  let mine = [];
-  try { mine = JSON.parse(readFileSync(markFile, 'utf8')).copied ?? []; } catch { /* first run */ }
+  let mine = [], myModel = null;
+  try { ({ copied: mine = [], model: myModel = null } = JSON.parse(readFileSync(markFile, 'utf8'))); } catch { /* first run */ }
   // Take out skills this tool copied for an earlier plan. The user's own and repo-tracked ones stay.
   for (const f of [...mine].sort()) {
     if (role.skills.includes(f) || shared.includes(f)) continue;
@@ -42,7 +42,7 @@ export function applyRole(role, { stores, shared }) {
     copied.push(s);
     out.push(`+ ${s}`);
   }
-  writeFileSync(markFile, JSON.stringify({ copied }, null, 2) + '\n');
+  writeFileSync(markFile, JSON.stringify({ copied, model: role.model }, null, 2) + '\n');
   let cur = {};
   if (existsSync(sf)) {
     // A hand-edited file that doesn't parse would lose the user's permissions if rewritten. Stop instead.
@@ -50,9 +50,13 @@ export function applyRole(role, { stores, shared }) {
     catch (e) { throw new Error(`${sf} is not valid JSON (${e.message}); fix it and run setup again`); }
   }
   cur.enabledPlugins = { ...(cur.enabledPlugins ?? {}), ...role.plugins };
+  // The model: set the planned one; drop one only if setup put it there (a hand-set model stays).
+  if (role.model) cur.model = role.model;
+  else if (myModel && cur.model === myModel) delete cur.model;
   writeFileSync(sf, JSON.stringify(cur, null, 2) + '\n');
   const pl = Object.entries(role.plugins);
   if (pl.length) out.push(`plugins ${pl.map(([k, v]) => k.split('@')[0] + (v ? '' : '(-)')).join(' ')}`);
+  if (role.model) out.push(`model ${role.model}`);
   return out;
 }
 
@@ -156,6 +160,11 @@ export function selftest(ok) {
     ok('reports missing skill with where it looked', out1.some(l => l.startsWith('! ghost') && l.includes(store)), out1.join(' | '));
     ok('leaves other settings alone', s1.permissions.allow[0] === 'Read(x)' && s1.enabledPlugins['other@x'] === true);
     ok('sets role plugins', s1.enabledPlugins['p@m'] === true && s1.enabledPlugins['q@m'] === false);
+    applyRole({ ...ui, model: 'haiku' }, { stores: [store], shared: [] });
+    const sm = JSON.parse(readFileSync(join(ui.dir, '.claude', 'settings.local.json'), 'utf8'));
+    ok('sets the role model, other keys kept', sm.model === 'haiku' && sm.permissions.allow[0] === 'Read(x)');
+    applyRole(ui, { stores: [store], shared: [] });
+    ok('a plan without a model removes the one setup wrote', JSON.parse(readFileSync(join(ui.dir, '.claude', 'settings.local.json'), 'utf8')).model === undefined);
     const out2 = applyRole(ui, { stores: [store], shared: [] });
     ok('idempotent', JSON.stringify(out2) === JSON.stringify(out1), JSON.stringify([out1, out2]));
     mkdirSync(join(ui.dir, '.claude', 'skills', 'users-own'), { recursive: true });

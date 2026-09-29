@@ -348,7 +348,7 @@ export function board(root, now = Date.now()) {
   const roles = rolesOf(root);
   const names = sessionNames();
   const declared = new Set(roles.flatMap(r => r.skills));
-  const views = roles.map(r => ({ name: r.name, dir: r.dir, branch: r.branch, what: r.what,
+  const views = roles.map(r => ({ name: r.name, dir: r.dir, branch: r.branch, what: r.what, model: r.model, autonomy: r.autonomy,
     isMain: r.isMain, logDir: logDirOf(r.dir), kit: kitOf(r, declared) }));
   const sess = views.flatMap(v => sessions(v.logDir, now, v.name, names)).sort((a, b) => a.idleMs - b.idleMs);
   for (const v of views) v.sessionIds = sess.filter(s => s.role === v.name).map(s => s.id);

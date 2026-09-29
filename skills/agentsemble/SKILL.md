@@ -55,6 +55,19 @@ One `main` plus 2-4 sub roles. For each role give:
 | dir / branch | `../<repo>-team/<role>` and `agent/<role>` — all sub folders together in one team folder |
 | skills | chosen from what is installed, with a reason |
 | plugins | which to switch on or off for this role |
+| model | the model tier, with a reason (see below) |
+| autonomy | `ask` · `build` · `run` — how far it goes before checking in (see below) |
+
+**Model tier.** Match the model to the judgment the role needs, not to its importance:
+- main, and any role that verifies others' work → the strongest model (`opus`). Splitting work,
+  judging results and deciding merges is where a weaker model costs the most.
+- roles that implement a clear brief → a mid model (`sonnet`).
+- roles that only watch, collect or run fixed commands → the lightest (`haiku`).
+Leave `model` out to keep the human's default. Only use names the human has access to.
+
+**Autonomy.** Default `build`. Use `ask` for roles touching money, data deletion, auth or
+production config, or when the human wants to see plans first. Use `run` only for a role with a
+command that proves it is done (tests, a measurement) — it keeps fixing until that passes.
 
 - If two roles would edit the same file, say so and give it one owner.
 - Tools a role needs but the human doesn't have go in `wishlist`. Never install anything.
@@ -114,6 +127,11 @@ Tell main (this session) and put the same rules in the first message to each sub
   sends the answer back.
 
 **Subs**
+- Work at your autonomy level from `agents.json`, and say it in the first message to each sub:
+  - `ask` — before changing code, send main a short plan and wait for "go".
+  - `build` — change, test and commit on your branch, then report. Ask only when blocked.
+  - `run` — keep going through fix → test loops until the brief's check passes; report once at
+    the end, or when stuck after three tries.
 - Report back with: what changed, how it was checked (commands and numbers), commit hashes.
 - Don't merge into main. Don't edit files another role owns.
 - Before starting new work, merge the latest `main` into your branch — main may have changed files

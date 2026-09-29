@@ -69,16 +69,21 @@ It reads `~/.claude/projects/…` logs and `~/.claude/sessions`; it never writes
 
 ```json
 {
-  "main": { "dir": ".", "what": "split, check, merge" },
+  "main": { "dir": ".", "what": "split, check, merge", "model": "opus" },
   "ui": {
     "dir": "../myapp-team/ui", "branch": "agent/ui",
     "what": "web UI", "not": "server API", "owns": ["web/"],
     "skills": ["taste"],
-    "plugins": { "superpowers@claude-plugins-official": true }
+    "plugins": { "superpowers@claude-plugins-official": true },
+    "model": "sonnet", "autonomy": "build"
   },
   "wishlist": ["a browser-measuring skill"]
 }
 ```
+
+`model` picks the window's model (strongest for main and verifiers, mid for implementers, light for
+watchers). `autonomy` is how far a role goes before checking in: `ask` (plan first), `build`
+(default: change, test, commit, report) or `run` (loop until its check passes).
 
 Commit it — the team has history like the code. Schema: `agents.schema.json`.
 

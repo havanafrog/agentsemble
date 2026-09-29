@@ -66,16 +66,21 @@ node "<플러그인 폴더>/bin/board.mjs"      →  http://127.0.0.1:8740
 
 ```json
 {
-  "main": { "dir": ".", "what": "쪼개고, 확인하고, 합친다" },
+  "main": { "dir": ".", "what": "쪼개고, 확인하고, 합친다", "model": "opus" },
   "ui": {
     "dir": "../myapp-team/ui", "branch": "agent/ui",
     "what": "화면", "not": "서버 API", "owns": ["web/"],
     "skills": ["taste"],
-    "plugins": { "superpowers@claude-plugins-official": true }
+    "plugins": { "superpowers@claude-plugins-official": true },
+    "model": "sonnet", "autonomy": "build"
   },
   "wishlist": ["브라우저로 재는 스킬"]
 }
 ```
+
+`model` 은 창의 모델(main·검증 역할은 가장 센 것, 구현은 중간, 지켜보기만 하면 가벼운 것),
+`autonomy` 는 확인받기 전 어디까지 하는지: `ask`(계획부터 보여 줌) · `build`(기본: 고치고
+시험하고 커밋한 뒤 보고) · `run`(점검이 통과할 때까지 알아서 반복).
 
 커밋해 두세요 — 팀 구성도 코드처럼 내력이 남아야 합니다. 스키마: `agents.schema.json`.
 

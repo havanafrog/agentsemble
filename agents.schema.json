@@ -17,7 +17,9 @@
       "not": { "type": "string" },
       "owns": { "type": "array", "items": { "type": "string" } },
       "skills": { "type": "array", "items": { "type": "string" } },
-      "plugins": { "type": "object", "additionalProperties": { "type": "boolean" } }
+      "plugins": { "type": "object", "additionalProperties": { "type": "boolean" } },
+      "model": { "type": "string", "description": "Model this role's window runs: an alias (opus, sonnet, haiku) or a model id. Written to its .claude/settings.local.json. Omit to use your default." },
+      "autonomy": { "enum": ["ask", "build", "run"], "default": "build", "description": "ask: send main a plan and wait. build: change, test, commit on its own branch, then report. run: keep going through fix/test loops, report once at the end." }
     }
   }
 }
