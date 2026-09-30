@@ -1,6 +1,6 @@
 ---
 name: agentsemble
-description: Read this repo, propose a team of Claude Code sessions (one main + 2-4 subs, each in its own git worktree with its own skills and plugins), set it up after the human approves, and watch it on a local board. Use for "/agentsemble", "set up an agent team", "split this work across sessions", "/agentsemble status", "/agentsemble add <role>", "/agentsemble board".
+description: Read this repo, propose a team of Claude Code sessions (one main + subs; only roles that edit files get their own git worktree), set it up after the human approves, watch it on a local board, and keep a builder/verifier ledger. Use for "/agentsemble", "set up an agent team", "split this work across sessions", "/agentsemble status | add <role> | board", and the ledger — "/agentsemble verify", "/agentsemble claim", "/agentsemble claims", "/agentsemble send".
 ---
 
 # agentsemble
@@ -15,7 +15,9 @@ Scripts live in the plugin; call them as `node "${CLAUDE_PLUGIN_ROOT}/bin/<scrip
 | `/agentsemble status` | `status.mjs` — plan vs installed tools, per role |
 | `/agentsemble add <role>` | steps 2-4 for one extra role |
 | `/agentsemble board` | start `board.mjs` in the background (it keeps running), give the URL |
-| `/ops verify` · `/ops claim` · `/ops status` | the builder/verifier ledger (ops skill) |
+| `/agentsemble verify` · `claim` · `claims` · `send` | the builder/verifier ledger — **read `references/ledger.md` first** and follow it; skip the steps below |
+
+(`/ops …` from older versions means the same ledger commands.)
 
 ## 0. Check the ground
 
@@ -123,7 +125,7 @@ Tell main (this session) and put the same rules in the first message to each sub
 **Main**
 - Split the work and send each sub a self-contained brief with `SendMessage`: goal, files, how
   it will be checked, what not to touch.
-- When a sub reports, run its check yourself before merging. Record verdicts with the ops ledger
+- When a sub reports, run its check yourself before merging. Record verdicts in the ledger (`references/ledger.md`)
   when the claim matters.
 - Merge subs' branches into main yourself; subs never merge. After merging, tell the sub the merge
   commit in one line so it knows its work landed.

@@ -97,7 +97,7 @@ main 폴더에서 main 의 도구로 엽니다.
 | `node bin/inventory.mjs` | 설치된 플러그인(켜짐/꺼짐, 딸린 스킬)과 내 스킬 목록 |
 | `/agentsemble add <역할>` | 역할 하나 더 |
 | `/agentsemble board` | 판 띄우기 |
-| `/ops verify` · `/ops claim` · `/ops status` | `ops/ledger.jsonl` 장부 |
+| `/agentsemble verify` · `claim` · `claims` · `send` | `ops/ledger.jsonl` 장부 (만드는 쪽·재는 쪽) |
 
 ## 나누지 말아야 할 때
 

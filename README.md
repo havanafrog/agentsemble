@@ -100,7 +100,7 @@ Commit it — the team has history like the code. Schema: `agents.schema.json`.
 | `node bin/inventory.mjs` | installed plugins (on/off, with their skills) and your own skills |
 | `/agentsemble add <role>` | one more role |
 | `/agentsemble board` | start the board |
-| `/ops verify` · `/ops claim` · `/ops status` | builder/verifier ledger in `ops/ledger.jsonl` |
+| `/agentsemble verify` · `claim` · `claims` · `send` | builder/verifier ledger in `ops/ledger.jsonl` |
 
 ## When not to split
 

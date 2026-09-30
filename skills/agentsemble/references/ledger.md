@@ -1,9 +1,4 @@
----
-name: ops
-description: Two Claude Code sessions work as builder and verifier. The builder puts claims in a ledger with the command that measures them; the verifier runs that command and rules confirm, refute or hold. Use "/ops verify" to become the verifier, "/ops claim "..." --how "..."" to add a claim, "/ops status" for open claims, "/ops send" to hand work to another session.
----
-
-# ops — builder and verifier
+# The ledger — builder and verifier
 
 One session builds, another measures. The two do **not** share context — that is the point.
 Two sessions with the same context make the same mistakes.
@@ -22,7 +17,7 @@ The ledger CLI is `node "${CLAUDE_PLUGIN_ROOT}/bin/ledger.mjs"` — written `led
 
 The verifier **does not fix.** Fixing erases what was wrong.
 
-## `/ops verify` — become the verifier
+## `/agentsemble verify` — become the verifier
 
 ### 1. Find the other side
 
@@ -67,16 +62,16 @@ Found something new? Do not claim it yourself; leave a note and tell the builder
 ledger note "vote endpoint has no cooldown; changing 'who' allows unlimited votes" --by verifier
 ```
 
-## `/ops claim` — the builder posts a claim
+## `/agentsemble claim` — the builder posts a claim
 
 ```
-/ops claim "classifier accuracy 56.3%" --how "node tools/train.mjs" --files tools/train.mjs
+/agentsemble claim "classifier accuracy 56.3%" --how "node tools/train.mjs" --files tools/train.mjs
 ```
 
 A claim **must say how to measure it.** The ledger refuses one without. One claim per claim:
 "cleaned up the UI and fixed two bugs" is three. After posting, `SendMessage` the verifier.
 
-## `/ops status`
+## `/agentsemble claims`
 
 ```
 ledger open
@@ -85,7 +80,7 @@ ledger open
 After **three** verdicts on one claim the ledger marks it for the human. Stop sending; report
 to the human in two lines what the two sides disagree on.
 
-## `/ops send` — hand over when the human asks
+## `/agentsemble send` — hand over when the human asks
 
 1. `ListAgents` for this repo's sessions. If no name was given and there is more than one,
    **ask and stop** — never throw work at an arbitrary session.
