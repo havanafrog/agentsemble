@@ -153,6 +153,7 @@
   .map .dot.moving { fill: var(--good); } .map .dot.busy { fill: var(--warn); }
   .map .dot.waiting { fill: var(--calm); } .map .dot.stopped, .map .dot.none { fill: var(--hair); }
   .map .clash { fill: var(--live); }
+  .map .node { cursor: pointer; } .map .node:hover rect, .map .node:focus-visible rect { stroke: var(--calm); stroke-width: 2; } .map .node:focus { outline: none; }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 11.5px; color: var(--sub); margin: 8px 2px 0; }
   .legend i { display: inline-block; width: 22px; height: 0; vertical-align: middle; margin-right: 6px; border-top: 2.5px solid var(--calm); }
   .legend i.stray { border-top: 2.5px dashed var(--warn); } .legend i.own { border-top: 1.5px solid var(--faint); opacity: .5; }
@@ -276,7 +277,9 @@ function mapHtml(d) {
   }
   R.forEach((r, i) => {
     const y = yR(i), p = phase(r.name);
-    boxes += `<g><rect class="box${r.isMain ? ' main' : ''}" x="${RX}" y="${y - 22}" width="${RW}" height="44" rx="10"/>`
+    // Click a role to open its latest window's conversation in the side drawer.
+    const last = d.sessions.filter(s => s.role === r.name).sort((a, b) => a.idleMs - b.idleMs)[0];
+    boxes += `<g${last ? ` class="node" data-open="${esc(last.id)}" role="button" tabindex="0" aria-label="Open ${esc(r.name)} conversation"` : ''}><rect class="box${r.isMain ? ' main' : ''}" x="${RX}" y="${y - 22}" width="${RW}" height="44" rx="10"/>`
       + `<circle class="dot ${esc(p)}" cx="${RX + 16}" cy="${y}" r="5"><title>${esc(PHASE[p] ?? 'no window')}</title></circle>`
       + `<text x="${RX + 30}" y="${y - 3}" font-weight="650">${esc(r.name)}</text>`
       + `<text class="sub" x="${RX + 30}" y="${y + 13}">${esc([r.isMain ? 'main' : r.shared ? 'shares main folder' : '', r.touched ? r.touched + ' changed' : 'no changes', PHASE[p] ?? ''].filter(Boolean).join(' · '))}</text></g>`;
@@ -405,12 +408,13 @@ document.addEventListener('click', e => {
       () => { c.outerHTML = `<code class="cmd">${esc(cmd)}</code>`; });
     return;
   }
-  const w = e.target.closest('.win');
-  if (w) openDrawer(w.dataset.id);
+  const w = e.target.closest('.win') ?? e.target.closest('[data-open]');
+  if (w) openDrawer(w.dataset.id ?? w.dataset.open);
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('drawer').hidden) closeDrawer();
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-copy]')) { e.preventDefault(); e.target.click(); }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-open]')) { e.preventDefault(); openDrawer(e.target.dataset.open); }
 });
 
 // Drawer: one session's conversation.
