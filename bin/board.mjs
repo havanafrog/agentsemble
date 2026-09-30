@@ -321,8 +321,10 @@ export function teamOf(sess) {
   };
 }
 
-function git(root, ...a) {
-  try { return execFileSync('git', ['-C', root, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); }
+function git(root, ...a) { return gitRaw(root, ...a)?.trim() ?? null; }
+// Untrimmed: porcelain lines start with a status column that may be a space.
+function gitRaw(root, ...a) {
+  try { return execFileSync('git', ['-C', root, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); }
   catch { return null; }
 }
 /** Branch, head commit, uncommitted paths, commits ahead of upstream (null = no upstream, not 0). */
@@ -333,8 +335,57 @@ export function repoState(root) {
     // symbolic-ref works on a fresh repo with no commits yet; rev-parse covers a detached HEAD.
     branch: git(root, 'symbolic-ref', '--short', '-q', 'HEAD') ?? git(root, 'rev-parse', '--abbrev-ref', 'HEAD'),
     head: hash ? { hash, subject: rest.join('\t'), when } : null,
-    dirty: (git(root, 'status', '--porcelain') ?? '').split('\n').filter(Boolean).map(l => ({ how: l.slice(0, 2).trim(), path: l.slice(3) })),
+    dirty: (gitRaw(root, 'status', '--porcelain') ?? '').split('\n').filter(Boolean).map(l => ({ how: l.slice(0, 2).trim(), path: l.slice(3) })),
     ahead: ahead === null ? null : +ahead,
+  };
+}
+
+const MAX_AREAS = 14;
+const lines = s => (s ?? '').split('\n').filter(Boolean);
+const areaOf = p => p.includes('/') ? p.slice(0, p.indexOf('/')) : '(root)';
+
+/**
+ * The live architecture: the repo's top-level areas, which role owns each, what each role has
+ * actually changed (its branch against main, plus uncommitted work), files two roles both changed,
+ * and who sends orders to whom. Drawn by the Map tab.
+ */
+export function mapOf(root, roles, talk = []) {
+  const files = lines(git(root, 'ls-files'));
+  const count = new Map();
+  for (const f of files) count.set(areaOf(f), (count.get(areaOf(f)) ?? 0) + 1);
+  const base = git(root, 'symbolic-ref', '--short', '-q', 'HEAD') ?? 'HEAD';
+  const touched = {};
+  for (const r of roles) {
+    const mine = new Set();
+    if (!r.isMain && !r.shared && r.branch) for (const f of lines(git(root, 'diff', '--name-only', `${base}...${r.branch}`))) mine.add(f);
+    if (!r.shared) for (const l of lines(gitRaw(r.dir, 'status', '--porcelain'))) mine.add(l.slice(3).replace(/^"|"$/g, ''));
+    touched[r.name] = [...mine].sort();
+  }
+  const by = new Map();
+  for (const [name, fs] of Object.entries(touched)) for (const f of fs) by.set(f, [...(by.get(f) ?? []), name]);
+  const clashes = [...by].filter(([, who]) => who.length > 1).map(([file, who]) => ({ file, who }));
+  // "web/" or "web/app.js" owns the web area; a bare "README.md" (not a folder) owns (root).
+  const ownsArea = (r, a) => (r.owns ?? []).some(o => {
+    const p = o.replace(/\/+$/, '');
+    return p === a || p.startsWith(a + '/') || (a === '(root)' && !p.includes('/') && !count.has(p));
+  });
+  const hot = new Set(Object.values(touched).flat().map(areaOf));
+  const areas = [...count].sort((a, b) => (hot.has(b[0]) - hot.has(a[0])) || b[1] - a[1]).slice(0, MAX_AREAS)
+    .map(([name, n]) => ({ name, files: n, owners: roles.filter(r => ownsArea(r, name)).map(r => r.name) }));
+  const names = new Set(roles.map(r => r.name));
+  const edges = new Map();
+  for (const m of talk) {
+    const to = names.has(m.to) ? m.to : null;
+    if (!m.role || !to || to === m.role) continue;
+    const k = m.role + '→' + to;
+    edges.set(k, { from: m.role, to, n: (edges.get(k)?.n ?? 0) + 1 });
+  }
+  return {
+    areas, clashes, edges: [...edges.values()],
+    roles: roles.map(r => ({ name: r.name, isMain: r.isMain, shared: !!r.shared,
+      touched: touched[r.name].length,
+      areas: [...new Set(touched[r.name].map(areaOf))],
+      stray: [...new Set(touched[r.name].map(areaOf))].filter(a => !r.isMain && !ownsArea(r, a)) })),
   };
 }
 
@@ -368,7 +419,7 @@ export function board(root, now = Date.now()) {
   const lf = ledgerPath();
   const all = readLedger(lf);
   return {
-    now, roles: views, sessions: sess, team, talk,
+    now, roles: views, sessions: sess, team, talk, map: mapOf(root, roles, talk),
     live: liveSessions(sessionDir(), new Set(sess.map(s => s.id))),
     repo: repoState(root),
     open: openClaims(lf), groups: ledgerGroups(all),
@@ -559,6 +610,35 @@ export function selftest(ok) {
       if (old === undefined) delete process.env.CLAUDE_HOME; else process.env.CLAUDE_HOME = old;
       if (oldL === undefined) delete process.env.OPS_LEDGER; else process.env.OPS_LEDGER = oldL;
     }
+
+    // The map: two sub roles on branches, one strays into the other's area, both edit one file.
+    const mr = join(t, 'shop'); mkdirSync(mr);
+    const g = (d, ...a) => execFileSync('git', ['-C', d, '-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { stdio: 'ignore' });
+    g(mr, 'init', '-q', '-b', 'main');
+    for (const [f, s] of [['web/a.js', '1'], ['api/b.js', '1'], ['api/c.js', '1'], ['README.md', 'r']]) {
+      mkdirSync(join(mr, dirname(f)), { recursive: true }); writeFileSync(join(mr, f), s);
+    }
+    g(mr, 'add', '-A'); g(mr, 'commit', '-qm', 'i');
+    const wu = join(t, 'shop-team', 'web'), wa = join(t, 'shop-team', 'api');
+    g(mr, 'worktree', 'add', '-q', '-b', 'agent/web', wu); g(mr, 'worktree', 'add', '-q', '-b', 'agent/api', wa);
+    writeFileSync(join(wu, 'web', 'a.js'), '2'); writeFileSync(join(wu, 'api', 'b.js'), '2'); g(wu, 'commit', '-qam', 'w');
+    writeFileSync(join(wa, 'api', 'b.js'), '3');                       // uncommitted
+    const mroles = [
+      { name: 'main', dir: mr, isMain: true, owns: ['README.md'] },
+      { name: 'web', dir: wu, branch: 'agent/web', owns: ['web/'] },
+      { name: 'api', dir: wa, branch: 'agent/api', owns: ['api/'] },
+      { name: 'review', dir: mr, shared: true, owns: [] },
+    ];
+    const mp = mapOf(mr, mroles, [{ role: 'main', to: 'web' }, { role: 'main', to: 'web' }, { role: 'web', to: 'main' }, { role: 'main', to: 'stranger' }]);
+    const A = Object.fromEntries(mp.areas.map(a => [a.name, a]));
+    const R = Object.fromEntries(mp.roles.map(r => [r.name, r]));
+    ok('map: areas with file counts and owners', A.api.files === 2 && A.api.owners.join() === 'api' && A['(root)'].owners.join() === 'main', JSON.stringify(mp.areas));
+    ok('map: committed branch work and uncommitted work both count', R.web.touched === 2 && R.api.touched === 1);
+    ok("map: work outside a role's own area is stray", R.web.stray.join() === 'api' && R.api.stray.length === 0, JSON.stringify(mp.roles));
+    ok('map: a file two roles changed is a clash', mp.clashes.length === 1 && mp.clashes[0].file === 'api/b.js' && mp.clashes[0].who.join() === 'web,api');
+    ok('map: orders between roles are counted, strangers skipped', mp.edges.find(e => e.from === 'main' && e.to === 'web')?.n === 2 && mp.edges.length === 2);
+    ok('map: a shared role touches nothing of its own', R.review.touched === 0);
+    ok('uncommitted path keeps its first letter (status column is a space)', repoState(wa).dirty[0]?.path === 'api/b.js', JSON.stringify(repoState(wa).dirty));
   } finally { rmSync(t, { recursive: true, force: true }); }
 
   const src = readFileSync(fileURLToPath(import.meta.url), 'utf8');

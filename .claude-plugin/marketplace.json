@@ -1,6 +1,6 @@
 {
   "name": "agentsemble",
-  "description": "agentsemble — assemble a team of Claude Code sessions for a repo and watch it on a local board.",
+  "description": "agentsemble — Split a repo across a team of Claude Code sessions and watch the whole team live on one map: who owns what, what each session changed, and where two sessions collide.",
   "owner": { "name": "havanafrog" },
-  "plugins": [{ "name": "agentsemble", "source": "./", "description": "Assemble and watch a team of Claude Code sessions." }]
+  "plugins": [{ "name": "agentsemble", "source": "./", "description": "Assemble a team of Claude Code sessions and watch it live on one map." }]
 }

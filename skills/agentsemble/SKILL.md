@@ -93,6 +93,19 @@ Will create 3 folders next to your repo (each a full checkout):
 
 New folders must never surprise the human.
 
+Then draw the plan as a small map — roles on the left, the repo's top-level areas on the right,
+one line per ownership, and mark any area two roles would both edit. Plain text so it reads in any
+terminal; this is the same picture the board's Map tab will keep live once the team is running.
+
+```
+main  ──── README.md, test/
+web   ──── web/
+api   ──── api/, docs/
+ml    ──── ml/
+review     (shared: reads only)
+!! api/routes.mjs — web and api would both edit it → owner: api
+```
+
 **Stop here and wait for the human to approve the table.** Do not run setup without an explicit yes.
 
 ## 3. Set it up

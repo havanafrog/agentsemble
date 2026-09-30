@@ -1,8 +1,18 @@
 # agentsemble
 
-**Read your repo, assemble a team of Claude Code sessions, and watch them work from one local dashboard.**
+**Split a repo across a team of Claude Code sessions — and watch the whole team, live, on one map.**
 
 [한국어](README.ko.md)
+
+![The Map tab: roles on the left, the repo's areas on the right, live lines between them](docs/board-map.png)
+
+The board draws your project's architecture *as the team is working on it*:
+
+- **who owns which part** of the repo, and **what each session has actually changed** (its branch plus uncommitted work)
+- **work outside a role's own area** (dashed orange) and **files two sessions both changed** (red) — before they turn into a merge fight
+- **who sent orders to whom**, and whether each window is moving, waiting for you, or stopped
+
+Everything is read from git and Claude Code's own logs on your machine. Nothing leaves localhost.
 
 ## Install
 
@@ -56,7 +66,7 @@ node "<plugin dir>/bin/board.mjs"        →  http://127.0.0.1:8740
 
 ## The board
 
-Four tabs: **Team** (main and its subs, the last order each sub got), **Sessions** (every session's
+Five tabs: **Map** (above), **Team** (main and its subs, the last order each sub got), **Sessions** (every session's
 latest moves; click one for its conversation), **Tools** (planned vs installed, per role —
 `missing` and `+` mark drift), **Ledger** (open claims first, finished ones folded).
 

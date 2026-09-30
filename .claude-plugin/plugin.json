@@ -1,7 +1,7 @@
 {
   "name": "agentsemble",
-  "version": "0.4.0",
-  "description": "Read your repo, assemble a team of Claude Code sessions, and watch them work from one local dashboard.",
+  "version": "0.5.0",
+  "description": "Split a repo across a team of Claude Code sessions and watch the whole team live on one map: who owns what, what each session changed, and where two sessions collide.",
   "author": { "name": "havanafrog" },
   "homepage": "https://github.com/havanafrog/agentsemble",
   "license": "MIT"

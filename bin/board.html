@@ -139,6 +139,24 @@
   .tools ol { margin: 4px 0; padding-left: 22px; }
   .tools li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   @media (prefers-reduced-motion: no-preference) { .win { transition: box-shadow .15s; } }
+
+  /* Map: roles on the left, the repo's areas on the right, live lines between them. */
+  .map { display: block; width: 100%; height: auto; }
+  .map text { fill: var(--text); font-size: 13px; }
+  .map .sub { fill: var(--faint); font-size: 11px; }
+  .map .box { fill: var(--surface); stroke: var(--hair); stroke-width: 1; }
+  .map .box.main { stroke: var(--calm); stroke-width: 1.5; }
+  .map .l-own { fill: none; stroke: var(--faint); stroke-opacity: .4; stroke-width: 1.5; }
+  .map .l-work { fill: none; stroke: var(--calm); stroke-width: 2.5; }
+  .map .l-stray { fill: none; stroke: var(--warn); stroke-width: 2.5; stroke-dasharray: 6 4; }
+  .map .l-talk { fill: none; stroke: var(--faint); stroke-width: 1.2; }
+  .map .dot.moving { fill: var(--good); } .map .dot.busy { fill: var(--warn); }
+  .map .dot.waiting { fill: var(--calm); } .map .dot.stopped, .map .dot.none { fill: var(--hair); }
+  .map .clash { fill: var(--live); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 11.5px; color: var(--sub); margin: 8px 2px 0; }
+  .legend i { display: inline-block; width: 22px; height: 0; vertical-align: middle; margin-right: 6px; border-top: 2.5px solid var(--calm); }
+  .legend i.stray { border-top: 2.5px dashed var(--warn); } .legend i.own { border-top: 1.5px solid var(--faint); opacity: .5; }
+  .clashes { color: var(--live); font-size: 12.5px; margin: 10px 2px 0; }
 </style>
 
 <div class="wrap">
@@ -149,13 +167,15 @@
   </div>
 
   <div class="tabs" role="tablist" aria-label="Board">
-    <button class="tab" role="tab" id="t-team" aria-controls="p-team" aria-selected="true">Team</button>
+    <button class="tab" role="tab" id="t-map" aria-controls="p-map" aria-selected="true">Map<span class="n" id="n-map"></span></button>
+    <button class="tab" role="tab" id="t-team" aria-controls="p-team" aria-selected="false">Team</button>
     <button class="tab" role="tab" id="t-wins" aria-controls="p-wins" aria-selected="false">Sessions<span class="n" id="n-wins"></span></button>
     <button class="tab" role="tab" id="t-tools" aria-controls="p-tools" aria-selected="false">Tools<span class="n" id="n-tools"></span></button>
     <button class="tab" role="tab" id="t-ledger" aria-controls="p-ledger" aria-selected="false">Ledger<span class="n" id="n-ledger"></span></button>
   </div>
 
-  <section role="tabpanel" id="p-team" aria-labelledby="t-team"></section>
+  <section role="tabpanel" id="p-map" aria-labelledby="t-map"></section>
+  <section role="tabpanel" id="p-team" aria-labelledby="t-team" hidden></section>
   <section role="tabpanel" id="p-wins" aria-labelledby="t-wins" hidden></section>
   <section role="tabpanel" id="p-tools" aria-labelledby="t-tools" hidden></section>
   <section role="tabpanel" id="p-ledger" aria-labelledby="t-ledger" hidden></section>
@@ -176,7 +196,7 @@ const ago = ms => ms < 60e3 ? 'just now' : ms < 3600e3 ? Math.round(ms / 60e3) +
 const PHASE = { moving: 'moving', waiting: 'your turn', busy: 'no reply yet', stopped: 'stopped' };
 
 // Tabs — remembered per viewer; the board is local so localStorage is fine.
-const TABS = ['team', 'wins', 'tools', 'ledger'];
+const TABS = ['map', 'team', 'wins', 'tools', 'ledger'];
 function pick(name) {
   for (const t of TABS) {
     const on = t === name;
@@ -218,6 +238,63 @@ function card(s, now, isMain) {
     + (steps ? `<div class="flow">${steps}</div>` : '')
     + `<div class="foot"><span>${esc(s.branch ?? '')}</span>`
     + `<span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span></div></button>`;
+}
+
+// The live architecture. Left: roles (dot = what their window is doing). Right: the repo's
+// top-level areas. Grey = owns it, blue = has changed files there, dashed orange = changed files
+// in an area it does not own. Curves on the far left = orders sent between roles.
+const RANK = { moving: 3, busy: 2, waiting: 1, stopped: 0 };
+function mapHtml(d) {
+  const m = d.map;
+  if (!m || !m.areas.length) return '<div class="card"><div class="empty">No tracked files yet.</div></div>';
+  const phase = name => d.sessions.filter(s => s.role === name)
+    .reduce((best, s) => (RANK[s.phase] ?? -1) > (RANK[best] ?? -1) ? s.phase : best, 'none');
+  const R = m.roles, row = 58, top = 16;
+  const ri0 = Object.fromEntries(R.map((r, i) => [r.name, i]));
+  // Put each area across from its owner so lines run straight; unowned areas go last.
+  const firstOwner = a => Math.min(...a.owners.map(o => ri0[o] ?? 99), 99);
+  const A = [...m.areas].sort((a, b) => firstOwner(a) - firstOwner(b));
+  const H = Math.max(R.length, A.length) * row + top * 2;
+  const yR = i => top + (i + 0.5) * (H - top * 2) / R.length;
+  const yA = i => top + (i + 0.5) * (H - top * 2) / A.length;
+  const RX = 150, RW = 250, AX = 640, AW = 320;
+  const ri = Object.fromEntries(R.map((r, i) => [r.name, i]));
+  const curve = (y1, y2) => `M${RX + RW},${y1} C${(RX + RW + AX) / 2},${y1} ${(RX + RW + AX) / 2},${y2} ${AX},${y2}`;
+  let lines = '', talk = '', boxes = '';
+  A.forEach((a, j) => {
+    for (const o of a.owners) if (o in ri) lines += `<path class="l-own" d="${curve(yR(ri[o]), yA(j))}"/>`;
+  });
+  R.forEach((r, i) => r.areas.forEach(name => {
+    const j = A.findIndex(a => a.name === name);
+    if (j >= 0) lines += `<path class="${r.stray.includes(name) ? 'l-stray' : 'l-work'}" d="${curve(yR(i), yA(j))}"><title>${esc(r.name)} changed files in ${esc(name)}</title></path>`;
+  }));
+  for (const e of m.edges) {
+    if (!(e.from in ri) || !(e.to in ri)) continue;
+    const y1 = yR(ri[e.from]), y2 = yR(ri[e.to]), bend = RX - 30 - Math.abs(ri[e.from] - ri[e.to]) * 18;
+    talk += `<path class="l-talk" marker-end="url(#arr)" d="M${RX},${y1 - 6} C${bend},${y1 - 6} ${bend},${y2 + 6} ${RX},${y2 + 6}"><title>${esc(e.from)} → ${esc(e.to)}: ${e.n} order${e.n > 1 ? 's' : ''}</title></path>`
+      + `<text class="sub" x="${RX - 12}" y="${y2 + 20}" text-anchor="end">${e.n}</text>`;
+  }
+  R.forEach((r, i) => {
+    const y = yR(i), p = phase(r.name);
+    boxes += `<g><rect class="box${r.isMain ? ' main' : ''}" x="${RX}" y="${y - 22}" width="${RW}" height="44" rx="10"/>`
+      + `<circle class="dot ${esc(p)}" cx="${RX + 16}" cy="${y}" r="5"><title>${esc(PHASE[p] ?? 'no window')}</title></circle>`
+      + `<text x="${RX + 30}" y="${y - 3}" font-weight="650">${esc(r.name)}</text>`
+      + `<text class="sub" x="${RX + 30}" y="${y + 13}">${esc([r.isMain ? 'main' : r.shared ? 'shares main folder' : '', r.touched ? r.touched + ' changed' : 'no changes', PHASE[p] ?? ''].filter(Boolean).join(' · '))}</text></g>`;
+  });
+  A.forEach((a, j) => {
+    const y = yA(j), clash = m.clashes.some(c => c.file.startsWith(a.name + '/') || (a.name === '(root)' && !c.file.includes('/')));
+    boxes += `<g><rect class="box" x="${AX}" y="${y - 22}" width="${AW}" height="44" rx="10"/>`
+      + (clash ? `<circle class="clash" cx="${AX + AW - 16}" cy="${y}" r="5"><title>two roles changed the same file here</title></circle>` : '')
+      + `<text x="${AX + 14}" y="${y - 3}" font-weight="650">${esc(cut(a.name, 30))}</text>`
+      + `<text class="sub" x="${AX + 14}" y="${y + 13}">${a.files} file${a.files === 1 ? '' : 's'}${a.owners.length ? ' · owner ' + esc(a.owners.join(', ')) : ' · no owner'}</text></g>`;
+  });
+  const svg = `<svg class="map" viewBox="0 0 ${AX + AW + 10} ${H}" role="img" aria-label="Roles, the areas of the repo they own and change, and orders between them">`
+    + `<defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" fill="currentColor" style="color:var(--faint)"/></marker></defs>`
+    + lines + talk + boxes + '</svg>';
+  return `<div class="card" style="padding:12px">${svg}</div>`
+    + '<div class="legend"><span><i class="own"></i>owns</span><span><i></i>changed files there</span><span><i class="stray"></i>changed files it does not own</span><span>curves on the left: orders sent (count)</span></div>'
+    + (m.clashes.length ? `<div class="clashes"><b>${m.clashes.length} file${m.clashes.length > 1 ? 's' : ''} changed by two roles</b> — merge one before the other goes further: `
+      + m.clashes.map(c => `${esc(c.file)} (${esc(c.who.join(' + '))})`).join(' · ') + '</div>' : '');
 }
 
 function teamHtml(d, now) {
@@ -310,6 +387,8 @@ async function tick() {
   $('n-wins').textContent = d.sessions.length || '';
   $('n-tools').textContent = off || '';
   $('n-ledger').textContent = d.open.length || '';
+  paint('p-map', mapHtml(d));
+  $('n-map').textContent = d.map?.clashes.length ? '⚠ ' + d.map.clashes.length : '';
   paint('p-team', teamHtml(d, now));
   paint('p-wins', winsHtml(d, now));
   paint('p-tools', toolsHtml(d));
