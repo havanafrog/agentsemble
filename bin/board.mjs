@@ -340,6 +340,52 @@ export function repoState(root) {
   };
 }
 
+/** Files a role has changed: its branch against main, plus uncommitted work in its folder. */
+function touchedFiles(root, base, r) {
+  if (r.shared) return [];
+  const mine = new Set();
+  if (!r.isMain && r.branch) for (const f of lines(git(root, 'diff', '--name-only', `${base}...${r.branch}`))) mine.add(f);
+  for (const l of lines(gitRaw(r.dir, 'status', '--porcelain'))) mine.add(l.slice(3).replace(/^"|"$/g, ''));
+  return [...mine].sort();
+}
+
+const PATCH_CUT = 256 * 1024;
+/**
+ * What one role changed, for the drawer's Changes view: per-file added/removed lines and the patch
+ * (branch against main, then uncommitted work). With `file`, just that file — used to put two roles'
+ * edits of a clashing file side by side. `file` must be one the role touched, so nothing else ever
+ * reaches git's arguments.
+ */
+export function changesOf(root, roles, name, file = null) {
+  const r = roles.find(x => x.name === name);
+  if (!r || r.shared) return null;
+  const base = git(root, 'symbolic-ref', '--short', '-q', 'HEAD') ?? 'HEAD';
+  const touched = touchedFiles(root, base, r);
+  if (file !== null && !touched.includes(file)) return null;
+  const only = file ? ['--', file] : [];
+  const runs = [];
+  if (!r.isMain && r.branch) runs.push([root, `${base}...${r.branch}`]);
+  runs.push([r.dir, 'HEAD']);
+  const stat = new Map();
+  let patch = '';
+  for (const [dir, range] of runs) {
+    for (const l of lines(gitRaw(dir, 'diff', '--numstat', range, ...only))) {
+      const [a, d, p] = l.split('\t');
+      const s = stat.get(p) ?? { path: p, add: 0, del: 0 };
+      s.add += a === '-' ? 0 : +a; s.del += d === '-' ? 0 : +d;
+      stat.set(p, s);
+    }
+    patch += gitRaw(dir, 'diff', '--no-color', range, ...only) ?? '';
+  }
+  // New files nobody has added yet have no diff; list them so they aren't invisible.
+  for (const f of touched) if (!stat.has(f) && (!file || f === file)) stat.set(f, { path: f, add: null, del: null });
+  return {
+    role: name, file,
+    files: [...stat.values()].sort((a, b) => a.path.localeCompare(b.path)),
+    patch: patch.length > PATCH_CUT ? patch.slice(0, PATCH_CUT) + '\n… (cut — open the branch for the rest)\n' : patch,
+  };
+}
+
 const MAX_AREAS = 14;
 const lines = s => (s ?? '').split('\n').filter(Boolean);
 const areaOf = p => p.includes('/') ? p.slice(0, p.indexOf('/')) : '(root)';
@@ -354,13 +400,7 @@ export function mapOf(root, roles, talk = []) {
   const count = new Map();
   for (const f of files) count.set(areaOf(f), (count.get(areaOf(f)) ?? 0) + 1);
   const base = git(root, 'symbolic-ref', '--short', '-q', 'HEAD') ?? 'HEAD';
-  const touched = {};
-  for (const r of roles) {
-    const mine = new Set();
-    if (!r.isMain && !r.shared && r.branch) for (const f of lines(git(root, 'diff', '--name-only', `${base}...${r.branch}`))) mine.add(f);
-    if (!r.shared) for (const l of lines(gitRaw(r.dir, 'status', '--porcelain'))) mine.add(l.slice(3).replace(/^"|"$/g, ''));
-    touched[r.name] = [...mine].sort();
-  }
+  const touched = Object.fromEntries(roles.map(r => [r.name, touchedFiles(root, base, r)]));
   const by = new Map();
   for (const [name, fs] of Object.entries(touched)) for (const f of fs) by.set(f, [...(by.get(f) ?? []), name]);
   const clashes = [...by].filter(([, who]) => who.length > 1).map(([file, who]) => ({ file, who }));
@@ -458,6 +498,11 @@ function main(argv) {
         if (!file) return res.writeHead(404).end();
         const num = k => (q.has(k) && /^\d+$/.test(q.get(k)) ? Number(q.get(k)) : null);
         return json(chatLog(file, { before: num('before'), from: num('from') }));
+      }
+      if (path === '/api/changes') {
+        const q = new URL(req.url, 'http://x').searchParams;
+        const c = changesOf(root, rolesOf(root), q.get('role') ?? '', q.get('file'));
+        return c ? json(c) : res.writeHead(404).end();
       }
       if (path === '/' || path === '/index.html') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -638,6 +683,16 @@ export function selftest(ok) {
     ok('map: a file two roles changed is a clash', mp.clashes.length === 1 && mp.clashes[0].file === 'api/b.js' && mp.clashes[0].who.join() === 'web,api');
     ok('map: orders between roles are counted, strangers skipped', mp.edges.find(e => e.from === 'main' && e.to === 'web')?.n === 2 && mp.edges.length === 2);
     ok('map: a shared role touches nothing of its own', R.review.touched === 0);
+    const cw = changesOf(mr, mroles, 'web');
+    ok('changes: a role\'s files with added/removed lines', cw.files.map(f => f.path).join() === 'api/b.js,web/a.js' && cw.files.every(f => f.add === 1 && f.del === 1), JSON.stringify(cw.files));
+    ok('changes: the patch shows the edit', /^\+2$/m.test(cw.patch) && /^-1$/m.test(cw.patch));
+    const ca = changesOf(mr, mroles, 'api');
+    ok('changes: uncommitted work counts too', ca.files.map(f => f.path).join() === 'api/b.js' && /^\+3$/m.test(ca.patch));
+    ok('changes: one file of a clash, per role', /^\+2$/m.test(changesOf(mr, mroles, 'web', 'api/b.js').patch) && !/web\/a\.js/.test(changesOf(mr, mroles, 'web', 'api/b.js').patch));
+    ok('changes: a file the role did not touch is refused, not passed to git', changesOf(mr, mroles, 'web', '--output=/tmp/x') === null && changesOf(mr, mroles, 'web', 'ml/x') === null);
+    ok('changes: unknown or shared role gives nothing', changesOf(mr, mroles, 'ghost') === null && changesOf(mr, mroles, 'review') === null);
+    writeFileSync(join(wa, 'api', 'new.js'), 'n');
+    ok('changes: a new untracked file is listed', changesOf(mr, mroles, 'api').files.some(f => f.path === 'api/new.js' && f.add === null));
     ok('uncommitted path keeps its first letter (status column is a space)', repoState(wa).dirty[0]?.path === 'api/b.js', JSON.stringify(repoState(wa).dirty));
   } finally { rmSync(t, { recursive: true, force: true }); }
 

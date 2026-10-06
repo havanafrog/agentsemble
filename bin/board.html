@@ -125,6 +125,21 @@
   .x { appearance: none; border: 0; background: none; font-size: 18px; color: var(--sub); cursor: pointer;
     margin-left: auto; width: 44px; height: 44px; border-radius: 8px; flex: none; }
   .x:hover { background: var(--page); color: var(--text); }
+  .dtabs { display: flex; gap: 2px; flex: none; }
+  .dtabs button { appearance: none; border: 0; background: none; font-size: 12.5px; font-weight: 650; color: var(--sub);
+    min-height: 36px; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+  .dtabs button[aria-pressed="true"] { background: var(--page); color: var(--text); }
+  .unread { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--me); margin-right: 6px; flex: none; }
+  .notify { appearance: none; border: 1px solid var(--hair); background: var(--surface); color: var(--sub); font-size: 12px;
+    border-radius: 999px; padding: 4px 10px; min-height: 28px; cursor: pointer; }
+  .notify[aria-pressed="true"] { color: var(--good); border-color: var(--good); }
+  .files { font-size: 12.5px; display: grid; grid-template-columns: 1fr auto auto; gap: 2px 12px; font-variant-numeric: tabular-nums; }
+  .files .a { color: var(--good); } .files .d { color: var(--live); }
+  .patch { margin: 0; font: 12px/1.45 ui-monospace, Consolas, monospace; white-space: pre; overflow-x: auto;
+    background: var(--page); border-radius: 8px; padding: 8px 10px; }
+  .patch .a { color: var(--good); } .patch .d { color: var(--live); } .patch .h { color: var(--faint); }
+  .who { font-weight: 650; font-size: 13px; margin-top: 6px; }
+  .clashes button { appearance: none; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; padding: 2px; }
   .db { flex: 1; overflow-y: auto; padding: 12px 16px 24px; display: flex; flex-direction: column; gap: 8px; overscroll-behavior: contain; }
   .more { align-self: center; appearance: none; border: 0; background: var(--page); color: var(--sub);
     font-size: 12px; padding: 8px 16px; border-radius: 999px; cursor: pointer; min-height: 36px; }
@@ -152,7 +167,7 @@
   .map .l-talk { fill: none; stroke: var(--faint); stroke-width: 1.2; }
   .map .dot.moving { fill: var(--good); } .map .dot.busy { fill: var(--warn); }
   .map .dot.waiting { fill: var(--calm); } .map .dot.stopped, .map .dot.none { fill: var(--hair); }
-  .map .clash { fill: var(--live); }
+  .map .clash { fill: var(--live); } .map .new { fill: var(--me); font-size: 11px; font-weight: 650; }
   .map .node { cursor: pointer; } .map .node:hover rect, .map .node:focus-visible rect { stroke: var(--calm); stroke-width: 2; } .map .node:focus { outline: none; }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 11.5px; color: var(--sub); margin: 8px 2px 0; }
   .legend i { display: inline-block; width: 22px; height: 0; vertical-align: middle; margin-right: 6px; border-top: 2.5px solid var(--calm); }
@@ -164,6 +179,7 @@
   <div class="bar">
     <h1>agentsemble</h1>
     <span class="meta" id="tally"></span>
+    <button type="button" class="notify" id="notify" hidden>Notify me</button>
     <span class="meta repo" id="repo"></span>
   </div>
 
@@ -183,7 +199,9 @@
 </div>
 
 <aside class="drawer" id="drawer" role="dialog" aria-modal="false" aria-labelledby="dname" hidden>
-  <div class="dh"><b id="dname"></b><button class="x" id="dx" type="button" aria-label="Close">✕</button></div>
+  <div class="dh"><b id="dname"></b>
+    <span class="dtabs" id="dtabs" hidden><button type="button" id="dt-chat" aria-pressed="true">Conversation</button><button type="button" id="dt-diff" aria-pressed="false">Changes</button></span>
+    <button class="x" id="dx" type="button" aria-label="Close">✕</button></div>
   <div class="db" id="dbody" aria-live="polite"></div>
 </aside>
 
@@ -217,6 +235,39 @@ document.querySelector('.tabs').addEventListener('keydown', e => {
 });
 try { const s = localStorage.getItem('as-tab'); if (TABS.includes(s)) pick(s); } catch { /* */ }
 
+// Unread: the last message time each window had when you last opened it. A window seen for the
+// first time counts as read, so opening the board doesn't light up everything.
+let SEEN = {};
+try { SEEN = JSON.parse(localStorage.getItem('as-seen') ?? '{}'); } catch { /* private mode */ }
+const lastAt = s => Date.parse(s.last?.at ?? '') || 0;
+const unread = s => lastAt(s) > (SEEN[s.id] ?? Infinity);
+function markSeen(s) { SEEN[s.id] = lastAt(s); try { localStorage.setItem('as-seen', JSON.stringify(SEEN)); } catch { /* */ } }
+
+// Notify when a window turns to "your turn". The browser asks permission once, on a click.
+const CAN_NOTIFY = 'Notification' in window;
+let WAITING = null;                        // ids waiting last tick; null until the first tick
+function notifyButton() {
+  if (!CAN_NOTIFY) return;
+  const on = Notification.permission === 'granted';
+  $('notify').hidden = Notification.permission === 'denied';
+  $('notify').textContent = on ? 'Notifications on' : 'Notify me';
+  $('notify').setAttribute('aria-pressed', String(on));
+}
+$('notify').onclick = async () => { if (CAN_NOTIFY && Notification.permission === 'default') await Notification.requestPermission(); notifyButton(); };
+notifyButton();
+function watchWaiting(d) {
+  const now = d.sessions.filter(s => s.phase === 'waiting');
+  document.title = now.length ? `(${now.length}) agentsemble` : 'agentsemble';
+  if (WAITING && CAN_NOTIFY && Notification.permission === 'granted') {
+    for (const s of now) {
+      if (WAITING.has(s.id)) continue;
+      const n = new Notification(`${s.name ?? s.id.slice(0, 8)} is waiting for you`, { body: cut(s.last?.text ?? '', 140), tag: s.id });
+      n.onclick = () => { window.focus(); openDrawer(s.id); n.close(); };
+    }
+  }
+  WAITING = new Set(now.map(s => s.id));
+}
+
 // Folds survive the 2-second redraw.
 const OPENED = new Set();
 addEventListener('toggle', e => {
@@ -232,7 +283,7 @@ const resumeCmd = s => `cd "${s.cwd ?? ''}" && claude --resume ${s.id}`;
 function card(s, now, isMain) {
   const steps = (s.steps ?? []).map(x => `<div><b>${esc(x.tool ?? 'says')}</b>${esc(x.text)}</div>`).join('');
   return `<button type="button" class="win ${s.phase === 'moving' ? 'moving' : ''} ${isMain ? 'main' : ''}" data-id="${esc(s.id)}">`
-    + `<div class="head"><span class="nm">${esc(s.name ?? s.id.slice(0, 8))}</span>`
+    + `<div class="head">${unread(s) ? '<span class="unread" title="new since you last opened it"></span>' : ''}<span class="nm">${esc(s.name ?? s.id.slice(0, 8))}</span>`
     + (s.role ? `<span class="role ${isMain ? '' : 'sub'}">${esc(s.role)}</span>` : '')
     + `<span class="ph ${esc(s.phase)}">${esc(PHASE[s.phase] ?? '')} · ${esc(ago(s.idleMs))}</span></div>`
     + (s.asked ? `<div class="asked"><i>asked</i>${esc(cut(s.asked, 90))}</div>` : '')
@@ -281,7 +332,7 @@ function mapHtml(d) {
     const last = d.sessions.filter(s => s.role === r.name).sort((a, b) => a.idleMs - b.idleMs)[0];
     boxes += `<g${last ? ` class="node" data-open="${esc(last.id)}" role="button" tabindex="0" aria-label="Open ${esc(r.name)} conversation"` : ''}><rect class="box${r.isMain ? ' main' : ''}" x="${RX}" y="${y - 22}" width="${RW}" height="44" rx="10"/>`
       + `<circle class="dot ${esc(p)}" cx="${RX + 16}" cy="${y}" r="5"><title>${esc(PHASE[p] ?? 'no window')}</title></circle>`
-      + `<text x="${RX + 30}" y="${y - 3}" font-weight="650">${esc(r.name)}</text>`
+      + `<text x="${RX + 30}" y="${y - 3}" font-weight="650">${esc(r.name)}${d.sessions.some(s => s.role === r.name && unread(s)) ? ' <tspan class="new">● new</tspan>' : ''}</text>`
       + `<text class="sub" x="${RX + 30}" y="${y + 13}">${esc([r.isMain ? 'main' : r.shared ? 'shares main folder' : '', r.touched ? r.touched + ' changed' : 'no changes', PHASE[p] ?? ''].filter(Boolean).join(' · '))}</text></g>`;
   });
   A.forEach((a, j) => {
@@ -297,7 +348,7 @@ function mapHtml(d) {
   return `<div class="card" style="padding:12px">${svg}</div>`
     + '<div class="legend"><span><i class="own"></i>owns</span><span><i></i>changed files there</span><span><i class="stray"></i>changed files it does not own</span><span>curves on the left: orders sent (count)</span></div>'
     + (m.clashes.length ? `<div class="clashes"><b>${m.clashes.length} file${m.clashes.length > 1 ? 's' : ''} changed by two roles</b> — merge one before the other goes further: `
-      + m.clashes.map(c => `${esc(c.file)} (${esc(c.who.join(' + '))})`).join(' · ') + '</div>' : '');
+      + m.clashes.map((c, i) => `<button type="button" data-clash="${i}">${esc(c.file)} (${esc(c.who.join(' + '))})</button>`).join(' · ') + ' — click to compare</div>' : '');
 }
 
 function teamHtml(d, now) {
@@ -381,6 +432,10 @@ async function tick() {
   }
   FAILS = 0;
   LAST = d;
+  for (const s of d.sessions) {
+    if (!(s.id in SEEN) || (s.id === OPEN_ID && unread(s))) markSeen(s);
+  }
+  watchWaiting(d);
   const now = d.now;
   const off = d.roles.reduce((a, r) => a + [...r.kit.skills, ...r.kit.plugins].filter(i => i.st === 'miss' || i.st === 'extra').length, 0);
   paint('tally', `<b>${d.sessions.filter(s => s.phase !== 'stopped').length}</b> active · <b>${d.open.length}</b> open claims`
@@ -408,6 +463,8 @@ document.addEventListener('click', e => {
       () => { c.outerHTML = `<code class="cmd">${esc(cmd)}</code>`; });
     return;
   }
+  const k = e.target.closest('[data-clash]');
+  if (k) return openClash(Number(k.dataset.clash));
   const w = e.target.closest('.win') ?? e.target.closest('[data-open]');
   if (w) openDrawer(w.dataset.id ?? w.dataset.open);
 });
@@ -425,9 +482,50 @@ function bubble(it) {
   const from = it.who === 'in' ? `from ${esc(it.from)} · ` : '';
   return `<div class="bub ${esc(it.who)}"><span class="t">${from}${esc(t)}</span>${esc(it.text)}</div>`;
 }
+// Changes: what a role changed, as files and a coloured patch.
+let DROLE = null;
+const patchHtml = p => `<pre class="patch">${p.split('\n').map(l => {
+  const c = l.startsWith('+') && !l.startsWith('+++') ? 'a' : l.startsWith('-') && !l.startsWith('---') ? 'd' : /^(@@|diff |index )/.test(l) ? 'h' : '';
+  return c ? `<span class="${c}">${esc(l)}</span>` : esc(l);
+}).join('\n')}</pre>`;
+const filesHtml = fs => `<div class="files">${fs.map(f => `<span>${esc(f.path)}</span>`
+  + (f.add === null ? '<span class="a">new</span><span></span>' : `<span class="a">+${f.add}</span><span class="d">−${f.del}</span>`)).join('')}</div>`;
+function drawerTab(view) {
+  $('dt-chat').setAttribute('aria-pressed', String(view === 'chat'));
+  $('dt-diff').setAttribute('aria-pressed', String(view === 'diff'));
+}
+async function showChanges(role) {
+  drawerTab('diff');
+  $('dbody').innerHTML = '<div class="empty">Loading…</div>';
+  const r = await fetch('/api/changes?role=' + encodeURIComponent(role));
+  if (!r.ok) { $('dbody').innerHTML = '<div class="empty">No changes to show.</div>'; return; }
+  const c = await r.json();
+  $('dbody').innerHTML = c.files.length
+    ? `<p class="fine">${esc(role)}'s branch against main, plus uncommitted work.</p>` + filesHtml(c.files) + patchHtml(c.patch)
+    : '<div class="empty">No changes yet.</div>';
+}
+async function openClash(i) {
+  const c = LAST?.map?.clashes[i];
+  if (!c) return;
+  OPEN_ID = null; DROLE = null; OPENER = document.activeElement;
+  $('dname').textContent = c.file; $('dtabs').hidden = true;
+  $('drawer').hidden = false; $('dx').focus();
+  const parts = await Promise.all(c.who.map(async who => {
+    const r = await fetch(`/api/changes?role=${encodeURIComponent(who)}&file=${encodeURIComponent(c.file)}`);
+    return `<div class="who">${esc(who)}</div>` + (r.ok ? patchHtml((await r.json()).patch || '(no diff)') : '<div class="empty">Not available.</div>');
+  }));
+  $('dbody').innerHTML = `<p class="fine">Both roles changed this file. Merge one, then have the other rebase on it.</p>` + parts.join('');
+}
+$('dt-chat').onclick = () => { if (OPEN_ID) openDrawer(OPEN_ID); };
+$('dt-diff').onclick = () => { if (DROLE) showChanges(DROLE); };
+
 async function openDrawer(id) {
-  OPEN_ID = id; OPENER = document.activeElement;
+  if ($('drawer').hidden) OPENER = document.activeElement;
+  OPEN_ID = id;
   const s = LAST?.sessions.find(x => x.id === id);
+  if (s) markSeen(s);
+  const role = s?.role && LAST?.roles.find(r => r.name === s.role && !r.shared) ? s.role : null;
+  DROLE = role; $('dtabs').hidden = !role; drawerTab('chat');
   $('dname').textContent = s?.name ?? id.slice(0, 8);
   $('dbody').innerHTML = '<div class="empty">Loading…</div>';
   $('drawer').hidden = false; $('dx').focus();
@@ -445,7 +543,7 @@ $('dbody').addEventListener('click', async e => {
   e.target.remove();
   $('dbody').insertAdjacentHTML('afterbegin', (START > 0 ? '<button class="more" id="more" type="button">Earlier</button>' : '') + j.items.map(bubble).join(''));
 });
-function closeDrawer() { $('drawer').hidden = true; OPEN_ID = null; OPENER?.focus?.(); }
+function closeDrawer() { $('drawer').hidden = true; OPEN_ID = null; DROLE = null; OPENER?.focus?.(); }
 $('dx').onclick = closeDrawer;
 
 tick();

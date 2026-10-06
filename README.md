@@ -70,6 +70,12 @@ Five tabs: **Map** (above), **Team** (main and its subs, the last order each sub
 latest moves; click one for its conversation), **Tools** (planned vs installed, per role —
 `missing` and `+` mark drift), **Ledger** (open claims first, finished ones folded).
 
+Click a role on the Map or a session card: a side drawer opens with its **Conversation** and its
+**Changes** (files and the patch — its branch against main plus uncommitted work). Click a red clash
+to see both roles' edits of that file one above the other. A blue dot marks windows with something new
+since you last opened them; **Notify me** pops a desktop notification when a window turns to *your
+turn*, and the tab title shows how many are waiting.
+
 > **The board shows full session transcripts.** It listens on 127.0.0.1 only. `--host` lets you
 > change that and prints a warning — don't expose it.
 
