@@ -1,6 +1,6 @@
 {
   "name": "agentsemble",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Split a repo across a team of Claude Code sessions and watch the whole team live on one map: who owns what, what each session changed, and where two sessions collide.",
   "author": { "name": "havanafrog" },
   "homepage": "https://github.com/havanafrog/agentsemble",

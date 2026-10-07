@@ -409,9 +409,28 @@ export function mapOf(root, roles, talk = []) {
     const p = o.replace(/\/+$/, '');
     return p === a || p.startsWith(a + '/') || (a === '(root)' && !p.includes('/') && !count.has(p));
   });
+  // A file's owner is the role with the most specific matching entry: "tools/x.mjs" beats "tools/".
+  const ownerOf = f => {
+    let best = null, len = -1;
+    for (const r of roles) for (const o of r.owns ?? []) {
+      const p = o.replace(/\/+$/, '');
+      if ((f === p || f.startsWith(p + '/')) && p.length > len) { best = r.name; len = p.length; }
+    }
+    return best;
+  };
+  const own = new Map();
+  for (const f of files) {
+    const o = ownerOf(f); if (!o) continue;
+    const m = own.get(areaOf(f)) ?? {}; m[o] = (m[o] ?? 0) + 1; own.set(areaOf(f), m);
+  }
   const hot = new Set(Object.values(touched).flat().map(areaOf));
   const areas = [...count].sort((a, b) => (hot.has(b[0]) - hot.has(a[0])) || b[1] - a[1]).slice(0, MAX_AREAS)
-    .map(([name, n]) => ({ name, files: n, owners: roles.filter(r => ownsArea(r, name)).map(r => r.name) }));
+    .map(([name, n]) => {
+      const o = own.get(name) ?? {};
+      const owners = roles.filter(r => o[r.name] || ownsArea(r, name)).map(r => r.name)
+        .sort((x, y) => (o[y] ?? 0) - (o[x] ?? 0));
+      return { name, files: n, owners, own: o };
+    });
   const names = new Set(roles.map(r => r.name));
   const edges = new Map();
   for (const m of talk) {
@@ -422,10 +441,14 @@ export function mapOf(root, roles, talk = []) {
   }
   return {
     areas, clashes, edges: [...edges.values()],
-    roles: roles.map(r => ({ name: r.name, isMain: r.isMain, shared: !!r.shared,
-      touched: touched[r.name].length,
-      areas: [...new Set(touched[r.name].map(areaOf))],
-      stray: [...new Set(touched[r.name].map(areaOf))].filter(a => !r.isMain && !ownsArea(r, a)) })),
+    roles: roles.map(r => {
+      // Stray = a changed file the plan gives to someone else, or to no one.
+      const strayFiles = r.isMain ? [] : touched[r.name].filter(f => ownerOf(f) !== r.name);
+      return { name: r.name, isMain: r.isMain, shared: !!r.shared,
+        touched: touched[r.name].length,
+        areas: [...new Set(touched[r.name].map(areaOf))],
+        stray: [...new Set(strayFiles.map(areaOf))], strayFiles };
+    }),
   };
 }
 
@@ -683,6 +706,11 @@ export function selftest(ok) {
     ok('map: a file two roles changed is a clash', mp.clashes.length === 1 && mp.clashes[0].file === 'api/b.js' && mp.clashes[0].who.join() === 'web,api');
     ok('map: orders between roles are counted, strangers skipped', mp.edges.find(e => e.from === 'main' && e.to === 'web')?.n === 2 && mp.edges.length === 2);
     ok('map: a shared role touches nothing of its own', R.review.touched === 0);
+    // Owners split one folder by file: owning api/c.js does not make api/b.js yours.
+    const split = mapOf(mr, [mroles[0], { ...mroles[1], owns: ['web/', 'api/c.js'] }, { ...mroles[2], owns: ['api/b.js'] }]);
+    const SA = Object.fromEntries(split.areas.map(a => [a.name, a])), SR = Object.fromEntries(split.roles.map(r => [r.name, r]));
+    ok('map: owning one file in a folder does not cover the rest', SR.web.stray.join() === 'api' && SR.web.strayFiles.join() === 'api/b.js' && SR.api.stray.length === 0, JSON.stringify(split.roles));
+    ok('map: a folder split by file shows how many files each owner has', SA.api.own.web === 1 && SA.api.own.api === 1 &&SA.api.owners.join() === 'web,api', JSON.stringify(SA.api));
     const cw = changesOf(mr, mroles, 'web');
     ok('changes: a role\'s files with added/removed lines', cw.files.map(f => f.path).join() === 'api/b.js,web/a.js' && cw.files.every(f => f.add === 1 && f.del === 1), JSON.stringify(cw.files));
     ok('changes: the patch shows the edit', /^\+2$/m.test(cw.patch) && /^-1$/m.test(cw.patch));

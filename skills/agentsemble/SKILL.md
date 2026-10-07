@@ -53,7 +53,7 @@ One `main` plus 2-4 sub roles. For each role give:
 | field | meaning |
 |---|---|
 | what / not | one line each |
-| owns | files and folders it mainly changes |
+| owns | files and folders it mainly changes. When roles split one folder, list the files — the most specific entry wins ("tools/x.mjs" over "tools/"), and the board flags any changed file the plan gives to someone else |
 | dir / branch | `../<repo>-team/<role>` and `agent/<role>` — all sub folders together in one team folder. A role that never edits files gets `"shared": true` instead (see below) |
 | skills | chosen from what is installed, with a reason |
 | plugins | which to switch on or off for this role |
