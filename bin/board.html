@@ -318,7 +318,7 @@ function mapHtml(d) {
   });
   R.forEach((r, i) => r.areas.forEach(name => {
     const j = A.findIndex(a => a.name === name);
-    if (j >= 0) lines += `<path class="${r.stray.includes(name) ? 'l-stray' : 'l-work'}" d="${curve(yR(i), yA(j))}"><title>${esc(r.name)} changed files in ${esc(name)}</title></path>`;
+    if (j >= 0) lines += `<path class="${r.stray.includes(name) ? 'l-stray' : 'l-work'}" d="${curve(yR(i), yA(j))}"><title>${esc(r.name)} changed files in ${esc(name)}${r.stray.includes(name) ? ' it does not own: ' + esc((r.strayFiles ?? []).filter(f => (f.includes('/') ? f.slice(0, f.indexOf('/')) : '(root)') === name).join(', ')) : ''}</title></path>`;
   }));
   for (const e of m.edges) {
     if (!(e.from in ri) || !(e.to in ri)) continue;
@@ -340,7 +340,7 @@ function mapHtml(d) {
     boxes += `<g><rect class="box" x="${AX}" y="${y - 22}" width="${AW}" height="44" rx="10"/>`
       + (clash ? `<circle class="clash" cx="${AX + AW - 16}" cy="${y}" r="5"><title>two roles changed the same file here</title></circle>` : '')
       + `<text x="${AX + 14}" y="${y - 3}" font-weight="650">${esc(cut(a.name, 30))}</text>`
-      + `<text class="sub" x="${AX + 14}" y="${y + 13}">${a.files} file${a.files === 1 ? '' : 's'}${a.owners.length ? ' · owner ' + esc(a.owners.join(', ')) : ' · no owner'}</text></g>`;
+      + `<text class="sub" x="${AX + 14}" y="${y + 13}">${a.files} file${a.files === 1 ? '' : 's'}${a.owners.length ? ' · owner ' + esc(a.owners.map(o => a.owners.length > 1 && a.own?.[o] ? `${o} ${a.own[o]}` : o).join(', ')) : ' · no owner'}</text></g>`;
   });
   const svg = `<svg class="map" viewBox="0 0 ${AX + AW + 10} ${H}" role="img" aria-label="Roles, the areas of the repo they own and change, and orders between them">`
     + `<defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" fill="currentColor" style="color:var(--faint)"/></marker></defs>`
@@ -348,7 +348,8 @@ function mapHtml(d) {
   return `<div class="card" style="padding:12px">${svg}</div>`
     + '<div class="legend"><span><i class="own"></i>owns</span><span><i></i>changed files there</span><span><i class="stray"></i>changed files it does not own</span><span>curves on the left: orders sent (count)</span></div>'
     + (m.clashes.length ? `<div class="clashes"><b>${m.clashes.length} file${m.clashes.length > 1 ? 's' : ''} changed by two roles</b> — merge one before the other goes further: `
-      + m.clashes.map((c, i) => `<button type="button" data-clash="${i}">${esc(c.file)} (${esc(c.who.join(' + '))})</button>`).join(' · ') + ' — click to compare</div>' : '');
+      + m.clashes.map((c, i) => `<button type="button" data-clash="${i}">${esc(c.file)} (${esc(c.who.join(' + '))})</button>`).join(' · ') + ' — click to compare</div>' : '')
+    + R.filter(r => r.strayFiles?.length).map(r => `<div class="clashes"><b>${esc(r.name)} changed files it does not own</b> — ${esc(r.strayFiles.slice(0, 8).join(', '))}${r.strayFiles.length > 8 ? ` +${r.strayFiles.length - 8}` : ''}. Hand them to their owner or add them to its <code>owns</code>.</div>`).join('');
 }
 
 function teamHtml(d, now) {
