@@ -81,6 +81,13 @@ turn*, and the tab title shows how many are waiting.
 
 It reads `~/.claude/projects/…` logs and `~/.claude/sessions`; it never writes anything.
 
+**In a container.** Mount the folder that holds the repo and its worktrees (read-only), plus
+`~/.claude/sessions` and the repo's `~/.claude/projects/<slug>` folders, set `CLAUDE_HOME` to where they
+landed, and run `board.mjs --host 0.0.0.0` with the port published to `127.0.0.1` only. Logs are named
+after the host path, so tell the board where the mount came from:
+`AGENTSEMBLE_PATH_MAP=/work=C:\Users\me\code`. Make worktree links relative first
+(`git worktree repair --relative-paths`) so git can follow them inside the container.
+
 ## agents.json
 
 ```json

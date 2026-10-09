@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { loadAgents } from './lib/agents.mjs';
-import { projectSlug, leaf, claudeHome, isMain } from './lib/paths.mjs';
+import { projectSlug, leaf, claudeHome, isMain, hostPath } from './lib/paths.mjs';
 import { kitOf } from './lib/kit.mjs';
 import { read as readLedger, open as openClaims, ledgerGroups, ledgerPath } from './ledger.mjs';
 
@@ -25,7 +25,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_PORT = 8740;
 
 const sessionDir = () => join(claudeHome(), 'sessions');
-export const logDirOf = dir => join(claudeHome(), 'projects', projectSlug(resolve(dir)));
+export const logDirOf = dir => join(claudeHome(), 'projects', projectSlug(hostPath(resolve(dir))));
 
 /** The registry's .json files (a .key sibling lives there too). Half-written files are skipped. */
 function sessionFiles(dir) {
