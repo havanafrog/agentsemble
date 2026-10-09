@@ -68,10 +68,10 @@
   .copy:hover { color: var(--text); }
   code.cmd { display: block; font-size: 11px; white-space: pre-wrap; word-break: break-all; color: var(--sub); }
 
-  .trunk { width: 2px; height: 16px; background: var(--faint); margin-left: 34px; }
+  .trunk { width: 2px; height: 12px; background: var(--faint); margin-left: 34px; }
   .subs { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start;
-    border-top: 2px solid var(--faint); padding-top: 16px; margin: 0 0 20px 34px; }
-  .sub { width: 380px; max-width: 100%; }
+    border-left: 2px solid var(--faint); padding: 4px 0 4px 16px; margin: 0 0 20px 34px; }
+  .subw { width: 380px; max-width: 100%; }
   .order { font-size: 11.5px; color: var(--sub); margin: 0 0 6px 8px; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
   .order b { color: var(--text); font-weight: 650; }
@@ -156,26 +156,16 @@
   @media (prefers-reduced-motion: no-preference) { .win { transition: box-shadow .15s; } }
 
   /* Map: roles on the left, the repo's areas on the right, live lines between them. */
-  .grid { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
-  .grid th, .grid td { padding: 9px 10px; border-bottom: 1px solid var(--hair); text-align: center; white-space: nowrap; }
-  .grid thead th { font-size: 12px; font-weight: 650; color: var(--sub); vertical-align: bottom; }
-  .grid thead th small { display: block; font-weight: 400; color: var(--faint); }
-  .grid th.who { text-align: left; font-weight: 650; color: var(--text); }
-  .grid th.who small { display: block; font-weight: 400; color: var(--faint); font-size: 11.5px; }
-  .grid th.who[data-open] { cursor: pointer; } .grid th.who[data-open]:hover { color: var(--calm); }
-  .grid tr:last-child > * { border-bottom: 0; }
-  .grid td { color: var(--faint); }
-  .grid td.own { color: var(--text); }
-  .grid td.work b { color: var(--calm); }
-  .grid td.stray b { color: var(--warn); }
-  .grid td.work, .grid td.stray { cursor: pointer; }
-  .grid .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; background: var(--hair); vertical-align: 1px; }
-  .grid .dot.moving { background: var(--good); } .grid .dot.busy { background: var(--warn); } .grid .dot.waiting { background: var(--calm); }
-  .grid .clash { color: var(--live); }
-  .grid .new { color: var(--me); font-size: 11px; font-weight: 650; margin-left: 4px; }
-  .grid .open { appearance: none; border: 1px solid var(--hair); background: var(--surface); color: var(--text); border-radius: 8px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
-  .grid .open:hover { border-color: var(--calm); }
-  .grid-wrap { overflow-x: auto; }
+  .areas { display: flex; flex-wrap: wrap; gap: 5px; }
+  .areas span { font-size: 11.5px; color: var(--sub); background: var(--page); border-radius: 6px; padding: 2px 7px; font-variant-numeric: tabular-nums; }
+  .areas b { font-weight: 650; margin-left: 4px; }
+  .areas .work b { color: var(--calm); } .areas .stray { box-shadow: inset 0 0 0 1.5px var(--warn); } .areas .stray b { color: var(--warn); }
+  .rolecard .meta2 { font-size: 11.5px; color: var(--faint); flex: none; }
+  .rolecard .none { font-size: 12.5px; color: var(--faint); }
+  .open { appearance: none; border: 1px solid var(--hair); background: var(--surface); color: var(--text); border-radius: 8px;
+    padding: 4px 12px; min-height: 28px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; margin-left: auto; }
+  .open:hover { border-color: var(--calm); }
+  .open + .copy { margin-left: 0; }
   .clashes { color: var(--live); font-size: 12.5px; margin: 10px 2px 0; }
   .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--page); padding: 9px 14px; border-radius: 10px; font-size: 13px; z-index: 50; max-width: calc(100% - 32px); }
 </style>
@@ -190,14 +180,12 @@
 
   <div class="tabs" role="tablist" aria-label="Board">
     <button class="tab" role="tab" id="t-map" aria-controls="p-map" aria-selected="true">Map<span class="n" id="n-map"></span></button>
-    <button class="tab" role="tab" id="t-team" aria-controls="p-team" aria-selected="false">Team</button>
     <button class="tab" role="tab" id="t-wins" aria-controls="p-wins" aria-selected="false">Sessions<span class="n" id="n-wins"></span></button>
     <button class="tab" role="tab" id="t-tools" aria-controls="p-tools" aria-selected="false">Tools<span class="n" id="n-tools"></span></button>
     <button class="tab" role="tab" id="t-ledger" aria-controls="p-ledger" aria-selected="false">Ledger<span class="n" id="n-ledger"></span></button>
   </div>
 
   <section role="tabpanel" id="p-map" aria-labelledby="t-map"></section>
-  <section role="tabpanel" id="p-team" aria-labelledby="t-team" hidden></section>
   <section role="tabpanel" id="p-wins" aria-labelledby="t-wins" hidden></section>
   <section role="tabpanel" id="p-tools" aria-labelledby="t-tools" hidden></section>
   <section role="tabpanel" id="p-ledger" aria-labelledby="t-ledger" hidden></section>
@@ -220,7 +208,7 @@ const ago = ms => ms < 60e3 ? 'just now' : ms < 3600e3 ? Math.round(ms / 60e3) +
 const PHASE = { moving: 'moving', waiting: 'your turn', busy: 'no reply yet', stopped: 'stopped' };
 
 // Tabs — remembered per viewer; the board is local so localStorage is fine.
-const TABS = ['map', 'team', 'wins', 'tools', 'ledger'];
+const TABS = ['map', 'wins', 'tools', 'ledger'];
 function pick(name) {
   for (const t of TABS) {
     const on = t === name;
@@ -297,49 +285,45 @@ function card(s, now, isMain) {
     + `<span><span class="copy" role="button" tabindex="0" data-win="${esc(s.id)}">open window</span> <span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span></span></div></button>`;
 }
 
-// The live architecture, as a grid: a row per role, a column per top-level area. A number is how
-// many files there the role owns; blue ✎ is files it changed now, orange ✎ is changes to files it
-// does not own. Click a role to read its conversation, "Open" to bring its terminal up.
+// The team, live: main on top, its subs below, one card per role. Each card says what its window is
+// doing, the areas of the repo it owns (with file counts) and what it is changing right now — blue ✎
+// in its own files, orange ✎ in someone else's. Click a card to read the conversation; Open brings
+// its terminal to the front (or reopens it); Start opens a new one for a role with no window yet.
 const RANK = { moving: 3, busy: 2, waiting: 1, stopped: 0 };
-function mapHtml(d) {
-  const m = d.map;
-  if (!m || !m.areas.length) return '<div class="card"><div class="empty">No tracked files yet.</div></div>';
-  const phase = name => d.sessions.filter(s => s.role === name)
-    .reduce((best, s) => (RANK[s.phase] ?? -1) > (RANK[best] ?? -1) ? s.phase : best, 'none');
-  const A = m.areas;
-  const clashIn = a => m.clashes.some(c => c.file.startsWith(a + '/') || (a === '(root)' && !c.file.includes('/')));
-  const head = '<tr><th></th>' + A.map(a => `<th>${esc(cut(a.name, 18))}${clashIn(a.name) ? ' <span class="clash" title="two roles changed the same file here">●</span>' : ''}<small>${a.files} file${a.files === 1 ? "" : "s"}</small></th>`).join('') + '<th></th></tr>';
-  const rows = m.roles.map(r => {
-    const p = phase(r.name);
-    const last = d.sessions.filter(s => s.role === r.name).sort((x, y) => x.idleMs - y.idleMs)[0];
-    const orders = m.edges.filter(e => e.from === r.name).map(e => `→ ${e.to} ${e.n}`).join(' · ');
-    const sub = [r.shared ? 'shares main folder' : '', PHASE[p] ?? 'no window', orders].filter(Boolean).join(' · ');
-    const cells = A.map(a => {
-      const own = a.own?.[r.name] ?? 0, ch = r.changed?.[a.name] ?? 0, stray = r.stray.includes(a.name);
-      if (ch) return `<td class="${stray ? 'stray' : 'work'}" data-diff="${esc(r.name)}" title="${esc(r.name)} changed ${ch} file${ch > 1 ? 's' : ''} here${stray ? ' it does not own' : ''} — click to see">${own || ''} <b>✎${ch}</b></td>`;
-      return own ? `<td class="own">${own}</td>` : '<td>·</td>';
-    }).join('');
-    return `<tr><th class="who"${last ? ` data-open="${esc(last.id)}" role="button" tabindex="0" title="Read its conversation"` : ''}><span class="dot ${esc(p)}"></span>${esc(r.name)}`
-      + `${d.sessions.some(s => s.role === r.name && unread(s)) ? '<span class="new">● new</span>' : ''}<small>${esc(sub)}</small></th>${cells}`
-      + `<td><button type="button" class="open" data-win="${esc(last?.id ?? '')}" data-role="${esc(r.name)}" title="${last ? 'Bring its terminal to the front, or reopen it' : 'Open a new terminal for this role'}">${last ? 'Open' : 'Start'}</button></td></tr>`;
+function roleCard(d, r, now) {
+  const m = d.map, mr = m.roles.find(x => x.name === r.name) ?? { stray: [], changed: {} };
+  const s = d.sessions.filter(x => x.role === r.name).sort((x, y) => x.idleMs - y.idleMs)[0];
+  const order = s && d.team.subs.find(x => x.id === s.id)?.order;
+  const areas = m.areas.map(a => {
+    const own = a.own?.[r.name] ?? 0, ch = mr.changed?.[a.name] ?? 0, stray = mr.stray.includes(a.name);
+    if (!own && !ch) return '';
+    return `<span class="${ch ? (stray ? 'stray' : 'work') : ''}" title="${own} file${own === 1 ? '' : 's'} owned${ch ? ` · ${ch} changed now${stray ? ' (not its own)' : ''}` : ''}">${esc(a.name)} ${own || ''}${ch ? `<b>✎${ch}</b>` : ''}</span>`;
   }).join('');
-  return `<div class="card grid-wrap" style="padding:6px 10px"><table class="grid"><thead>${head}</thead><tbody>${rows}</tbody></table></div>`
-    + (m.clashes.length ? `<div class="clashes"><b>${m.clashes.length} file${m.clashes.length > 1 ? 's' : ''} changed by two roles</b> — `
-      + m.clashes.map((c, i) => `<button type="button" data-clash="${i}">${esc(c.file)} (${esc(c.who.join(' + '))})</button>`).join(' · ') + '</div>' : '');
+  const sends = m.edges.filter(e => e.from === r.name).map(e => `→ ${e.to} ${e.n}`).join(' · ');
+  const steps = (s?.steps ?? []).slice(-3).map(x => `<div><b>${esc(x.tool ?? 'says')}</b>${esc(x.text)}</div>`).join('');
+  const isMain = r.isMain;
+  return `<div class="win rolecard ${s?.phase === 'moving' ? 'moving' : ''} ${isMain ? 'main' : ''}"${s ? ` data-open="${esc(s.id)}" role="button" tabindex="0" aria-label="Read ${esc(r.name)} conversation"` : ''}>`
+    + `<div class="head">${s && unread(s) ? '<span class="unread" title="new since you last opened it"></span>' : ''}<span class="nm">${esc(r.name)}</span>`
+    + `<span class="meta2">${esc([r.shared ? 'shares main folder' : '', r.autonomy, r.model].filter(Boolean).join(' · '))}</span>`
+    + `<span class="ph ${esc(s?.phase ?? '')}">${s ? esc(PHASE[s.phase] ?? '') + ' · ' + esc(ago(s.idleMs)) : 'no window'}</span></div>`
+    + (order ? `<div class="asked"><i>order</i>${esc(cut(order.text, 90))}</div>` : s?.asked ? `<div class="asked"><i>asked</i>${esc(cut(s.asked, 90))}</div>` : '')
+    + (steps ? `<div class="flow">${steps}</div>` : (s ? '' : `<div class="none">${esc(r.what || 'No session yet.')}</div>`))
+    + (areas ? `<div class="areas">${areas}</div>` : '')
+    + `<div class="foot"><span>${esc([r.branch, sends].filter(Boolean).join(' · '))}</span>`
+    + `<button type="button" class="open" data-win="${esc(s?.id ?? '')}" data-role="${esc(r.name)}" title="${s ? 'Bring its terminal to the front, or reopen it' : 'Open a new terminal for this role'}">${s ? 'Open' : 'Start'}</button>`
+    + (s ? `<span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span>` : '') + '</div></div>';
 }
-
-function teamHtml(d, now) {
-  const by = new Map(d.sessions.map(s => [s.id, s]));
-  const main = by.get(d.team.main);
-  if (!main) return `<div class="empty">No main session yet. Open Claude Code in this repo and run <code>/agentsemble</code>.</div>`
-    + (d.sessions.length ? `<div class="cards">${d.sessions.map(s => card(s, now)).join('')}</div>` : '');
-  const subs = d.team.subs.map(x => ({ ...x, s: by.get(x.id) })).filter(x => x.s);
-  const rest = d.sessions.filter(s => s.id !== main.id && !subs.some(x => x.id === s.id));
-  return `<div class="sub" style="width:min(460px,100%)">${card(main, now, true)}</div>`
-    + (subs.length ? `<div class="trunk"></div><div class="subs">${subs.map(x => `<div class="sub">`
-      + (x.order ? `<div class="order"><b>last order</b> ${esc(cut(x.order.text, 80))}</div>` : '')
-      + card(x.s, now) + '</div>').join('')}</div>` : '')
-    + (rest.length ? fold('team:rest', '<b>Other sessions in this repo</b>', rest.length, `<div class="cards" style="padding:8px 0">${rest.map(s => card(s, now)).join('')}</div>`) : '');
+function mapHtml(d, now) {
+  const m = d.map;
+  if (!m) return '<div class="empty">No tracked files yet.</div>';
+  const main = d.roles.find(r => r.isMain), subs = d.roles.filter(r => !r.isMain);
+  const known = new Set(d.roles.map(r => r.name));
+  const rest = d.sessions.filter(s => !s.role || !known.has(s.role) || d.sessions.filter(x => x.role === s.role).sort((x, y) => x.idleMs - y.idleMs)[0] !== s);
+  return (m.clashes.length ? `<div class="clashes" style="margin:0 2px 12px"><b>${m.clashes.length} file${m.clashes.length > 1 ? 's' : ''} changed by two roles</b> — `
+      + m.clashes.map((c, i) => `<button type="button" data-clash="${i}">${esc(c.file)} (${esc(c.who.join(' + '))})</button>`).join(' · ') + '</div>' : '')
+    + (main ? `<div class="subw" style="width:min(520px,100%)">${roleCard(d, main, now)}</div>` : '')
+    + (subs.length ? `<div class="trunk"></div><div class="subs">${subs.map(r => `<div class="subw">${roleCard(d, r, now)}</div>`).join('')}</div>` : '')
+    + (rest.length ? fold('map:rest', '<b>Older or other sessions</b>', rest.length, `<div class="cards" style="padding:8px 0">${rest.map(s => card(s, now)).join('')}</div>`) : '');
 }
 
 function winsHtml(d, now) {
@@ -428,9 +412,8 @@ async function tickOnce() {
   $('n-wins').textContent = d.sessions.length || '';
   $('n-tools').textContent = off || '';
   $('n-ledger').textContent = d.open.length || '';
-  paint('p-map', mapHtml(d));
+  paint('p-map', mapHtml(d, now));
   $('n-map').textContent = d.map?.clashes.length ? '⚠ ' + d.map.clashes.length : '';
-  paint('p-team', teamHtml(d, now));
   paint('p-wins', winsHtml(d, now));
   paint('p-tools', toolsHtml(d));
   paint('p-ledger', ledgerHtml(d.groups, now));

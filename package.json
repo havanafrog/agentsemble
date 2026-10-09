@@ -1,6 +1,6 @@
 {
   "name": "agentsemble",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Split a repo across a team of Claude Code sessions and watch the whole team live on one map: who owns what, what each session changed, and where two sessions collide.",
   "type": "module",
   "license": "MIT",
