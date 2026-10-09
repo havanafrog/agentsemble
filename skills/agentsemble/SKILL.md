@@ -9,6 +9,11 @@ Assemble a team of Claude Code sessions for this repo and keep it in tune.
 
 Scripts live in the plugin; call them as `node "${CLAUDE_PLUGIN_ROOT}/bin/<script>"` from the repo root.
 
+**Ask with choices.** Every question below that has a short list of answers goes through the
+`AskUserQuestion` tool (a selection box the human clicks), not free text — put the recommended
+option first and mark it "(Recommended)". The human can still pick "Other" and type. Only when that
+tool is not available, ask in plain text.
+
 | Command | What happens |
 |---|---|
 | `/agentsemble` | steps 0-5 below |
@@ -23,14 +28,15 @@ Scripts live in the plugin; call them as `node "${CLAUDE_PLUGIN_ROOT}/bin/<scrip
 
 - Not a git repo, or a repo with no commit yet → the human may never have used git. Explain in
   one or two plain lines why the team needs it (each session gets its own copy to work in, and
-  main merges their work back), then ask: "Make this folder a git repo and save a first snapshot?"
+  main merges their work back), then ask with choices: "Make this folder a git repo and save a first
+  snapshot?" — *Yes, set up git (Recommended)* · *No, stop*.
   On yes run `node "${CLAUDE_PLUGIN_ROOT}/bin/init.mjs"`. It runs `git init`, adds a starter
   `.gitignore` (node_modules, .env, logs …) only when none exists, and makes the first commit.
   It stops and lists files that look like secrets or are over 50 MB — show that list and let the
   human choose; never add them yourself. If git is missing it says where to install it.
   On no, stop.
 - `agents.json` already exists → do not redesign. Run `status.mjs`, show the result, and ask
-  whether they want `add`, a redesign, or nothing.
+  with choices: *Add a role* · *Redesign the team* · *Nothing — keep it*.
 
 ## 1. Understand the project (read only)
 
@@ -44,7 +50,8 @@ Show the human 5-10 lines:
 - the strands of work (for example: UI / server / model training)
 - files two strands would both touch
 
-Let them correct it, then continue.
+Ask with choices: *That's right (Recommended)* · *Correct something* — on the second, let them
+type the fix, then continue.
 
 ## 2. Propose the team — then stop
 
@@ -106,7 +113,10 @@ review     (shared: reads only)
 !! api/routes.mjs — web and api would both edit it → owner: api
 ```
 
-**Stop here and wait for the human to approve the table.** Do not run setup without an explicit yes.
+**Stop here and ask for approval with choices**, putting the plain-text map in the first option's
+`preview` so it shows beside the choice: *Approve and set up (Recommended)* · *Change roles* ·
+*Stay solo — no team*. If the work fits in ~30 minutes, put *Stay solo* first and recommend it
+instead. Do not run setup without the human picking approve.
 
 ## 3. Set it up
 

@@ -23,6 +23,8 @@ function installed(claudeDir) {
  * @param declared every skill any role plans, so "another role's skill" can be told from "repo skill"
  */
 export function kitOf(role, declared) {
+  // A shared role opens in main's folder with main's tools — nothing of its own to compare.
+  if (role.shared) return { skills: [], plugins: [], shared: [], model: null };
   const got = installed(join(role.dir, '.claude'));
   const want = role.skills;
   const shared = (got.skills ?? []).filter(s => !declared.has(s));
@@ -73,6 +75,8 @@ export function selftest(ok) {
     writeFileSync(join(sub, '.claude', 'settings.local.json'), JSON.stringify({ model: 'opus' }));
     ok('a different model is miss', kitOf({ ...R('sub'), model: 'sonnet' }, declared).model?.st === 'miss');
     ok('the planned model is ok', kitOf({ ...R('sub'), model: 'opus' }, declared).model?.st === 'ok');
+    ok("a shared role is not judged by main's folder — main's skills are not its extras",
+       (k => !k.skills.length && !k.plugins.length && !k.shared.length)(kitOf({ ...R('main'), name: 'rev', isMain: false, shared: true, skills: [], plugins: {} }, declared)));
     ok("a shared role's model is not checked against the folder (it is a launch flag)", kitOf({ ...R('main'), name: 'rev', isMain: false, shared: true, model: 'haiku' }, declared).model === null);
     ok('unreadable .claude means plan, not a crash',
        kitOf({ ...R('sub'), dir: join(t, 'does-not-exist') }, declared).skills.every(s => s.st === 'plan'));
