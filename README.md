@@ -4,13 +4,14 @@
 
 [한국어](README.ko.md)
 
-![The Map tab: roles on the left, the repo's areas on the right, live lines between them](docs/board-map.png)
+![The Map tab: a row per role, a column per area of the repo — what each owns and what it is changing now](docs/board-map.png)
 
 The board draws your project's architecture *as the team is working on it*:
 
 - **who owns which part** of the repo, and **what each session has actually changed** (its branch plus uncommitted work)
-- **work outside a role's own area** (dashed orange) and **files two sessions both changed** (red) — before they turn into a merge fight
+- **work outside a role's own files** (orange ✎) and **files two sessions both changed** (red ●) — before they turn into a merge fight
 - **who sent orders to whom**, and whether each window is moving, waiting for you, or stopped
+- **Open** beside a role brings its terminal to the front — or reopens it with `claude --resume` if it was closed (Windows)
 
 Everything is read from git and Claude Code's own logs on your machine. Nothing leaves localhost.
 

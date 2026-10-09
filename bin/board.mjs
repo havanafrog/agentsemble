@@ -18,6 +18,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { loadAgents } from './lib/agents.mjs';
 import { projectSlug, leaf, claudeHome, isMain, hostPath } from './lib/paths.mjs';
+import { openWindow } from './lib/open.mjs';
 import { kitOf } from './lib/kit.mjs';
 import { read as readLedger, open as openClaims, ledgerGroups, ledgerPath } from './ledger.mjs';
 
@@ -447,6 +448,7 @@ export function mapOf(root, roles, talk = []) {
       return { name: r.name, isMain: r.isMain, shared: !!r.shared,
         touched: touched[r.name].length,
         areas: [...new Set(touched[r.name].map(areaOf))],
+        changed: touched[r.name].reduce((o, f) => (o[areaOf(f)] = (o[areaOf(f)] ?? 0) + 1, o), {}),
         stray: [...new Set(strayFiles.map(areaOf))], strayFiles };
     }),
   };
@@ -496,6 +498,9 @@ const LOCAL = new Set(['127.0.0.1', 'localhost', '::1']);
 
 /** Serve only requests addressed to us. Binding to 127.0.0.1 alone doesn't stop DNS rebinding:
  *  a hostile page can point its own name at 127.0.0.1 and read transcripts. The Host header gives it away. */
+/** A state-changing request (opening a window) must come from the board's own page. */
+export const sameOrigin = (origin, host) => !!origin && !!host && origin === `http://${host}`;
+
 export function hostOk(host, port, extra = null) {
   const m = /^(\[[^\]]+\]|[^:]+)(?::(\d+))?$/.exec(String(host ?? ''));
   if (!m || Number(m[2] ?? 80) !== Number(port)) return false;
@@ -503,6 +508,7 @@ export function hostOk(host, port, extra = null) {
   return LOCAL.has(name) || (extra != null && name === String(extra).toLowerCase());
 }
 
+let CACHE = { at: 0, v: null };
 function main(argv) {
   const flag = (k, d) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : d; };
   const port = Number(flag('port', DEFAULT_PORT));
@@ -514,7 +520,23 @@ function main(argv) {
     const path = req.url.split('?')[0];
     const json = o => { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(o)); };
     try {
-      if (path === '/api/board') return json(board(root));
+      // One board per 2 s however many tabs ask; on a slow disk (a container) requests would pile up.
+      if (path === '/api/board') {
+        if (Date.now() - CACHE.at > 2000) CACHE = { at: Date.now(), v: board(root) };
+        return json(CACHE.v);
+      }
+      if (path === '/api/open' && req.method === 'POST') {
+        if (!sameOrigin(req.headers.origin, req.headers.host)) return res.writeHead(403).end();
+        const q = new URL(req.url, 'http://x').searchParams;
+        const d = board(root), id = q.get('id'), roleName = q.get('role');
+        const s = id ? d.sessions.find(x => x.id === id) : null;
+        const role = d.roles.find(r => r.name === (s?.role ?? roleName));
+        if ((id && !s) || !role) return res.writeHead(404).end();
+        const live = s ? d.live.find(l => l.id === s.id) ?? null : null;
+        const dir = role.shared ? root : role.dir;
+        openWindow({ s, live, role: { ...role, dir } }).then(result => json({ result }), e => res.writeHead(500).end(String(e.message)));
+        return;
+      }
       if (path === '/api/log') {
         const q = new URL(req.url, 'http://x').searchParams;
         const file = logFile(q.get('id'), rolesOf(root).map(r => logDirOf(r.dir)));
@@ -621,6 +643,7 @@ export function selftest(ok) {
     ok('missing log folder is not fatal', sessions(join(t, 'never-opened')).length === 0 && sessions(null).length === 0);
     writeFileSync(join(t, 'not-a-dir'), 'x');
     ok('unreadable log folder is not fatal', sessions(join(t, 'not-a-dir')).length === 0);
+    ok('opening a window needs the board page as origin', sameOrigin('http://127.0.0.1:8740', '127.0.0.1:8740') && !sameOrigin('https://evil.example', '127.0.0.1:8740') && !sameOrigin(undefined, '127.0.0.1:8740'));
     ok('only local Host headers are served (DNS rebinding)',
        hostOk('127.0.0.1:8740', 8740) && hostOk('localhost:8740', 8740) && hostOk('[::1]:8740', 8740)
        && !hostOk('attacker.example:8740', 8740) && !hostOk(undefined, 8740) && !hostOk('127.0.0.1:9999', 8740)
@@ -703,6 +726,7 @@ export function selftest(ok) {
     ok('map: areas with file counts and owners', A.api.files === 2 && A.api.owners.join() === 'api' && A['(root)'].owners.join() === 'main', JSON.stringify(mp.areas));
     ok('map: committed branch work and uncommitted work both count', R.web.touched === 2 && R.api.touched === 1);
     ok("map: work outside a role's own area is stray", R.web.stray.join() === 'api' && R.api.stray.length === 0, JSON.stringify(mp.roles));
+    ok('map: changed files are counted per area, for the grid', R.web.changed.api === 1 && R.web.changed.web === 1 && R.api.changed.api === 1, JSON.stringify(R.web.changed));
     ok('map: a file two roles changed is a clash', mp.clashes.length === 1 && mp.clashes[0].file === 'api/b.js' && mp.clashes[0].who.join() === 'web,api');
     ok('map: orders between roles are counted, strangers skipped', mp.edges.find(e => e.from === 'main' && e.to === 'web')?.n === 2 && mp.edges.length === 2);
     ok('map: a shared role touches nothing of its own', R.review.touched === 0);

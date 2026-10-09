@@ -156,23 +156,28 @@
   @media (prefers-reduced-motion: no-preference) { .win { transition: box-shadow .15s; } }
 
   /* Map: roles on the left, the repo's areas on the right, live lines between them. */
-  .map { display: block; width: 100%; height: auto; }
-  .map text { fill: var(--text); font-size: 13px; }
-  .map .sub { fill: var(--faint); font-size: 11px; }
-  .map .box { fill: var(--surface); stroke: var(--hair); stroke-width: 1; }
-  .map .box.main { stroke: var(--calm); stroke-width: 1.5; }
-  .map .l-own { fill: none; stroke: var(--faint); stroke-opacity: .4; stroke-width: 1.5; }
-  .map .l-work { fill: none; stroke: var(--calm); stroke-width: 2.5; }
-  .map .l-stray { fill: none; stroke: var(--warn); stroke-width: 2.5; stroke-dasharray: 6 4; }
-  .map .l-talk { fill: none; stroke: var(--faint); stroke-width: 1.2; }
-  .map .dot.moving { fill: var(--good); } .map .dot.busy { fill: var(--warn); }
-  .map .dot.waiting { fill: var(--calm); } .map .dot.stopped, .map .dot.none { fill: var(--hair); }
-  .map .clash { fill: var(--live); } .map .new { fill: var(--me); font-size: 11px; font-weight: 650; }
-  .map .node { cursor: pointer; } .map .node:hover rect, .map .node:focus-visible rect { stroke: var(--calm); stroke-width: 2; } .map .node:focus { outline: none; }
-  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 11.5px; color: var(--sub); margin: 8px 2px 0; }
-  .legend i { display: inline-block; width: 22px; height: 0; vertical-align: middle; margin-right: 6px; border-top: 2.5px solid var(--calm); }
-  .legend i.stray { border-top: 2.5px dashed var(--warn); } .legend i.own { border-top: 1.5px solid var(--faint); opacity: .5; }
+  .grid { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .grid th, .grid td { padding: 9px 10px; border-bottom: 1px solid var(--hair); text-align: center; white-space: nowrap; }
+  .grid thead th { font-size: 12px; font-weight: 650; color: var(--sub); vertical-align: bottom; }
+  .grid thead th small { display: block; font-weight: 400; color: var(--faint); }
+  .grid th.who { text-align: left; font-weight: 650; color: var(--text); }
+  .grid th.who small { display: block; font-weight: 400; color: var(--faint); font-size: 11.5px; }
+  .grid th.who[data-open] { cursor: pointer; } .grid th.who[data-open]:hover { color: var(--calm); }
+  .grid tr:last-child > * { border-bottom: 0; }
+  .grid td { color: var(--faint); }
+  .grid td.own { color: var(--text); }
+  .grid td.work b { color: var(--calm); }
+  .grid td.stray b { color: var(--warn); }
+  .grid td.work, .grid td.stray { cursor: pointer; }
+  .grid .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; background: var(--hair); vertical-align: 1px; }
+  .grid .dot.moving { background: var(--good); } .grid .dot.busy { background: var(--warn); } .grid .dot.waiting { background: var(--calm); }
+  .grid .clash { color: var(--live); }
+  .grid .new { color: var(--me); font-size: 11px; font-weight: 650; margin-left: 4px; }
+  .grid .open { appearance: none; border: 1px solid var(--hair); background: var(--surface); color: var(--text); border-radius: 8px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  .grid .open:hover { border-color: var(--calm); }
+  .grid-wrap { overflow-x: auto; }
   .clashes { color: var(--live); font-size: 12.5px; margin: 10px 2px 0; }
+  .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--page); padding: 9px 14px; border-radius: 10px; font-size: 13px; z-index: 50; max-width: calc(100% - 32px); }
 </style>
 
 <div class="wrap">
@@ -289,67 +294,38 @@ function card(s, now, isMain) {
     + (s.asked ? `<div class="asked"><i>asked</i>${esc(cut(s.asked, 90))}</div>` : '')
     + (steps ? `<div class="flow">${steps}</div>` : '')
     + `<div class="foot"><span>${esc(s.branch ?? '')}</span>`
-    + `<span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span></div></button>`;
+    + `<span><span class="copy" role="button" tabindex="0" data-win="${esc(s.id)}">open window</span> <span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span></span></div></button>`;
 }
 
-// The live architecture. Left: roles (dot = what their window is doing). Right: the repo's
-// top-level areas. Grey = owns it, blue = has changed files there, dashed orange = changed files
-// in an area it does not own. Curves on the far left = orders sent between roles.
+// The live architecture, as a grid: a row per role, a column per top-level area. A number is how
+// many files there the role owns; blue ✎ is files it changed now, orange ✎ is changes to files it
+// does not own. Click a role to read its conversation, "Open" to bring its terminal up.
 const RANK = { moving: 3, busy: 2, waiting: 1, stopped: 0 };
 function mapHtml(d) {
   const m = d.map;
   if (!m || !m.areas.length) return '<div class="card"><div class="empty">No tracked files yet.</div></div>';
   const phase = name => d.sessions.filter(s => s.role === name)
     .reduce((best, s) => (RANK[s.phase] ?? -1) > (RANK[best] ?? -1) ? s.phase : best, 'none');
-  const R = m.roles, row = 58, top = 16;
-  const ri0 = Object.fromEntries(R.map((r, i) => [r.name, i]));
-  // Put each area across from its owner so lines run straight; unowned areas go last.
-  const firstOwner = a => Math.min(...a.owners.map(o => ri0[o] ?? 99), 99);
-  const A = [...m.areas].sort((a, b) => firstOwner(a) - firstOwner(b));
-  const H = Math.max(R.length, A.length) * row + top * 2;
-  const yR = i => top + (i + 0.5) * (H - top * 2) / R.length;
-  const yA = i => top + (i + 0.5) * (H - top * 2) / A.length;
-  const RX = 150, RW = 250, AX = 640, AW = 320;
-  const ri = Object.fromEntries(R.map((r, i) => [r.name, i]));
-  const curve = (y1, y2) => `M${RX + RW},${y1} C${(RX + RW + AX) / 2},${y1} ${(RX + RW + AX) / 2},${y2} ${AX},${y2}`;
-  let lines = '', talk = '', boxes = '';
-  A.forEach((a, j) => {
-    for (const o of a.owners) if (o in ri) lines += `<path class="l-own" d="${curve(yR(ri[o]), yA(j))}"/>`;
-  });
-  R.forEach((r, i) => r.areas.forEach(name => {
-    const j = A.findIndex(a => a.name === name);
-    if (j >= 0) lines += `<path class="${r.stray.includes(name) ? 'l-stray' : 'l-work'}" d="${curve(yR(i), yA(j))}"><title>${esc(r.name)} changed files in ${esc(name)}${r.stray.includes(name) ? ' it does not own: ' + esc((r.strayFiles ?? []).filter(f => (f.includes('/') ? f.slice(0, f.indexOf('/')) : '(root)') === name).join(', ')) : ''}</title></path>`;
-  }));
-  for (const e of m.edges) {
-    if (!(e.from in ri) || !(e.to in ri)) continue;
-    const y1 = yR(ri[e.from]), y2 = yR(ri[e.to]), bend = RX - 30 - Math.abs(ri[e.from] - ri[e.to]) * 18;
-    talk += `<path class="l-talk" marker-end="url(#arr)" d="M${RX},${y1 - 6} C${bend},${y1 - 6} ${bend},${y2 + 6} ${RX},${y2 + 6}"><title>${esc(e.from)} → ${esc(e.to)}: ${e.n} order${e.n > 1 ? 's' : ''}</title></path>`
-      + `<text class="sub" x="${RX - 12}" y="${y2 + 20}" text-anchor="end">${e.n}</text>`;
-  }
-  R.forEach((r, i) => {
-    const y = yR(i), p = phase(r.name);
-    // Click a role to open its latest window's conversation in the side drawer.
-    const last = d.sessions.filter(s => s.role === r.name).sort((a, b) => a.idleMs - b.idleMs)[0];
-    boxes += `<g${last ? ` class="node" data-open="${esc(last.id)}" role="button" tabindex="0" aria-label="Open ${esc(r.name)} conversation"` : ''}><rect class="box${r.isMain ? ' main' : ''}" x="${RX}" y="${y - 22}" width="${RW}" height="44" rx="10"/>`
-      + `<circle class="dot ${esc(p)}" cx="${RX + 16}" cy="${y}" r="5"><title>${esc(PHASE[p] ?? 'no window')}</title></circle>`
-      + `<text x="${RX + 30}" y="${y - 3}" font-weight="650">${esc(r.name)}${d.sessions.some(s => s.role === r.name && unread(s)) ? ' <tspan class="new">● new</tspan>' : ''}</text>`
-      + `<text class="sub" x="${RX + 30}" y="${y + 13}">${esc([r.isMain ? 'main' : r.shared ? 'shares main folder' : '', r.touched ? r.touched + ' changed' : 'no changes', PHASE[p] ?? ''].filter(Boolean).join(' · '))}</text></g>`;
-  });
-  A.forEach((a, j) => {
-    const y = yA(j), clash = m.clashes.some(c => c.file.startsWith(a.name + '/') || (a.name === '(root)' && !c.file.includes('/')));
-    boxes += `<g><rect class="box" x="${AX}" y="${y - 22}" width="${AW}" height="44" rx="10"/>`
-      + (clash ? `<circle class="clash" cx="${AX + AW - 16}" cy="${y}" r="5"><title>two roles changed the same file here</title></circle>` : '')
-      + `<text x="${AX + 14}" y="${y - 3}" font-weight="650">${esc(cut(a.name, 30))}</text>`
-      + `<text class="sub" x="${AX + 14}" y="${y + 13}">${a.files} file${a.files === 1 ? '' : 's'}${a.owners.length ? ' · owner ' + esc(a.owners.map(o => a.owners.length > 1 && a.own?.[o] ? `${o} ${a.own[o]}` : o).join(', ')) : ' · no owner'}</text></g>`;
-  });
-  const svg = `<svg class="map" viewBox="0 0 ${AX + AW + 10} ${H}" role="img" aria-label="Roles, the areas of the repo they own and change, and orders between them">`
-    + `<defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" fill="currentColor" style="color:var(--faint)"/></marker></defs>`
-    + lines + talk + boxes + '</svg>';
-  return `<div class="card" style="padding:12px">${svg}</div>`
-    + '<div class="legend"><span><i class="own"></i>owns</span><span><i></i>changed files there</span><span><i class="stray"></i>changed files it does not own</span><span>curves on the left: orders sent (count)</span></div>'
-    + (m.clashes.length ? `<div class="clashes"><b>${m.clashes.length} file${m.clashes.length > 1 ? 's' : ''} changed by two roles</b> — merge one before the other goes further: `
-      + m.clashes.map((c, i) => `<button type="button" data-clash="${i}">${esc(c.file)} (${esc(c.who.join(' + '))})</button>`).join(' · ') + ' — click to compare</div>' : '')
-    + R.filter(r => r.strayFiles?.length).map(r => `<div class="clashes"><b>${esc(r.name)} changed files it does not own</b> — ${esc(r.strayFiles.slice(0, 8).join(', '))}${r.strayFiles.length > 8 ? ` +${r.strayFiles.length - 8}` : ''}. Hand them to their owner or add them to its <code>owns</code>.</div>`).join('');
+  const A = m.areas;
+  const clashIn = a => m.clashes.some(c => c.file.startsWith(a + '/') || (a === '(root)' && !c.file.includes('/')));
+  const head = '<tr><th></th>' + A.map(a => `<th>${esc(cut(a.name, 18))}${clashIn(a.name) ? ' <span class="clash" title="two roles changed the same file here">●</span>' : ''}<small>${a.files} file${a.files === 1 ? "" : "s"}</small></th>`).join('') + '<th></th></tr>';
+  const rows = m.roles.map(r => {
+    const p = phase(r.name);
+    const last = d.sessions.filter(s => s.role === r.name).sort((x, y) => x.idleMs - y.idleMs)[0];
+    const orders = m.edges.filter(e => e.from === r.name).map(e => `→ ${e.to} ${e.n}`).join(' · ');
+    const sub = [r.shared ? 'shares main folder' : '', PHASE[p] ?? 'no window', orders].filter(Boolean).join(' · ');
+    const cells = A.map(a => {
+      const own = a.own?.[r.name] ?? 0, ch = r.changed?.[a.name] ?? 0, stray = r.stray.includes(a.name);
+      if (ch) return `<td class="${stray ? 'stray' : 'work'}" data-diff="${esc(r.name)}" title="${esc(r.name)} changed ${ch} file${ch > 1 ? 's' : ''} here${stray ? ' it does not own' : ''} — click to see">${own || ''} <b>✎${ch}</b></td>`;
+      return own ? `<td class="own">${own}</td>` : '<td>·</td>';
+    }).join('');
+    return `<tr><th class="who"${last ? ` data-open="${esc(last.id)}" role="button" tabindex="0" title="Read its conversation"` : ''}><span class="dot ${esc(p)}"></span>${esc(r.name)}`
+      + `${d.sessions.some(s => s.role === r.name && unread(s)) ? '<span class="new">● new</span>' : ''}<small>${esc(sub)}</small></th>${cells}`
+      + `<td><button type="button" class="open" data-win="${esc(last?.id ?? '')}" data-role="${esc(r.name)}" title="${last ? 'Bring its terminal to the front, or reopen it' : 'Open a new terminal for this role'}">${last ? 'Open' : 'Start'}</button></td></tr>`;
+  }).join('');
+  return `<div class="card grid-wrap" style="padding:6px 10px"><table class="grid"><thead>${head}</thead><tbody>${rows}</tbody></table></div>`
+    + (m.clashes.length ? `<div class="clashes"><b>${m.clashes.length} file${m.clashes.length > 1 ? 's' : ''} changed by two roles</b> — `
+      + m.clashes.map((c, i) => `<button type="button" data-clash="${i}">${esc(c.file)} (${esc(c.who.join(' + '))})</button>`).join(' · ') + '</div>' : '');
 }
 
 function teamHtml(d, now) {
@@ -420,7 +396,13 @@ function paint(id, html) { if (PREV[id] === html) return; PREV[id] = html; $(id)
 let FAILS = 0;
 
 let LAST = null;
+let BUSY = false;
 async function tick() {
+  if (BUSY) return;   // a slow board must not pile up requests
+  BUSY = true;
+  try { await tickOnce(); } finally { BUSY = false; }
+}
+async function tickOnce() {
   let d;
   try {
     const r = await fetch('/api/board', { cache: 'no-store' });
@@ -464,6 +446,16 @@ document.addEventListener('click', e => {
       () => { c.outerHTML = `<code class="cmd">${esc(cmd)}</code>`; });
     return;
   }
+  const o = e.target.closest('[data-win]');
+  if (o) { e.stopPropagation(); return openWindow(o.dataset.win, o.dataset.role); }
+  const df = e.target.closest('[data-diff]');
+  if (df) {
+    const last = LAST?.sessions.filter(x => x.role === df.dataset.diff).sort((x, y) => x.idleMs - y.idleMs)[0];
+    if (last) return openDrawer(last.id).then(() => showChanges(df.dataset.diff));
+    OPENER = document.activeElement; OPEN_ID = null; DROLE = df.dataset.diff;
+    $('dname').textContent = DROLE; $('dtabs').hidden = false; $('drawer').hidden = false; $('dx').focus();
+    return showChanges(DROLE);
+  }
   const k = e.target.closest('[data-clash]');
   if (k) return openClash(Number(k.dataset.clash));
   const w = e.target.closest('.win') ?? e.target.closest('[data-open]');
@@ -471,9 +463,26 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('drawer').hidden) closeDrawer();
-  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-copy]')) { e.preventDefault(); e.target.click(); }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-copy],[data-win]')) { e.preventDefault(); e.target.click(); }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-open]')) { e.preventDefault(); openDrawer(e.target.dataset.open); }
 });
+
+// Open a role's terminal on this PC: the board brings a live window forward or reopens a closed one.
+const SAY = { ok: 'Brought its window to the front', opened: 'Opened a new terminal', notfound: 'Window not found — is it still open?',
+  unnamed: 'That window has no name — run /rename <role> in it once', noname: 'That window has no name — run /rename <role> in it once',
+  unsupported: 'Opening windows needs the board running on Windows itself, not in a container — copy the resume command instead',
+  failed: 'Could not open it' };
+function toast(t) {
+  const el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); el.textContent = t;
+  document.body.append(el); setTimeout(() => el.remove(), 4000);
+}
+async function openWindow(id, role) {
+  const q = id ? 'id=' + encodeURIComponent(id) : 'role=' + encodeURIComponent(role ?? '');
+  try {
+    const r = await fetch('/api/open?' + q, { method: 'POST' });
+    toast(r.ok ? SAY[(await r.json()).result] ?? 'Done' : 'Could not open it (' + r.status + ')');
+  } catch { toast('Board not reachable'); }
+}
 
 // Drawer: one session's conversation.
 let OPEN_ID = null, START = 0, OPENER = null;
