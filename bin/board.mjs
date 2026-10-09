@@ -137,8 +137,17 @@ export function commandOf(text) {
   return (m[1].trim() + ' ' + a[1].trim()).trim();
 }
 
+// A message another session sent (SendMessage). Newer Claude Code wraps it in a line before and a
+// paragraph after; older ones send the bare tag. → { from, text } or null.
+export function crossOf(text) {
+  const m = /<cross-session-message\b([^>]*)>([\s\S]*?)(?:<\/cross-session-message>|$)/.exec(String(text ?? ''));
+  if (!m || !/^(Another Claude session sent a message:\s*)?<cross-session-message/.test(String(text).trim())) return null;
+  const attr = k => new RegExp(`\\b${k}="([^"]*)"`).exec(m[1])?.[1];
+  return { from: attr('from-name') ?? attr('from') ?? '', text: m[2].trim() };
+}
+
 // Skill preambles, hooks and system notes arrive as "user" too. They are not the person.
-const NOT_HUMAN = [/^</, /^Caveat:/, /^Base directory for this skill:/];
+const NOT_HUMAN = [/^</, /^Caveat:/, /^Base directory for this skill:/, /^Another Claude session sent a message:/];
 export function askedByHuman(d) {
   if (!d || d.role !== 'user' || d.kind !== 'text') return false;
   if (commandOf(d.text)) return true;
@@ -208,8 +217,8 @@ export function sessions(dir, now = Date.now(), role = null, names = sessionName
       if (r.message?.role !== 'user') continue;
       const c = r.message.content;
       const t = typeof c === 'string' ? c : Array.isArray(c) ? c.filter(x => x.type === 'text').map(x => x.text).join('') : '';
-      const m = /^<cross-session-message from="([^"]*)"/.exec(t.trim());
-      if (m) heard.add(m[1]);
+      const m = crossOf(t);
+      if (m) heard.add(m.from);
     }
     let asked = null;
     for (let i = rows.length - 1; i >= 0 && !asked; i--) {
@@ -263,8 +272,8 @@ export function chatItems(rows) {
     if (m.role === 'user') {
       const text = parts.filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
       if (!text) continue;
-      const cross = /^<cross-session-message from="([^"]*)"/.exec(text);
-      if (cross) out.push({ who: 'in', from: cross[1], at: r.timestamp, text: text.replace(/<\/?cross-session-message[^>]*>/g, '').trim().slice(0, LOG_CUT) });
+      const cross = crossOf(text);
+      if (cross) out.push({ who: 'in', from: cross.from, at: r.timestamp, text: cross.text.slice(0, LOG_CUT) });
       else if (askedByHuman({ role: 'user', kind: 'text', text })) out.push({ who: 'me', at: r.timestamp, text: label(text).slice(0, LOG_CUT) });
       continue;
     }
@@ -671,6 +680,11 @@ export function selftest(ok) {
     ]);
     ok('chat: me, claude, tool group, incoming, claude', C.map(c => c.who).join() === 'me,claude,tools,in,claude', C.map(c => c.who).join());
     ok('consecutive tools fold', C[2].tools.length === 2 && C[3].from === 'main' && C[3].text === 'work');
+    const wrapped = 'Another Claude session sent a message:\n<cross-session-message from="uds:\\\\.\\pipe\\x" from-name="main" from-mode="prompting">\nmerged d26 — wait\n</cross-session-message>\n\nThis came from another Claude session — not typed by your user.';
+    const W = chatItems([{ message: { role: 'user', content: wrapped } }]);
+    ok('a wrapped message from another session shows as incoming, from its name, without the boilerplate',
+       W.length === 1 && W[0].who === 'in' && W[0].from === 'main' && W[0].text === 'merged d26 — wait', JSON.stringify(W));
+    ok('a message from another session is not what the person asked', !askedByHuman({ role: 'user', kind: 'text', text: wrapped }));
     ok('odd ids never touch the disk', logFile('../../etc/passwd', [t]) === null && logFile(null, [t]) === null);
     const cf = join(t, 'chat.jsonl');
     const big = { message: { role: 'user', content: [{ type: 'tool_result', content: 'x'.repeat(LOG_SPAN + 10) }] } };

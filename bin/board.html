@@ -148,6 +148,7 @@
   .bub.me { align-self: flex-end; background: var(--me); color: #fff; border-bottom-right-radius: 4px; }
   .bub.claude { align-self: flex-start; background: var(--page); border-bottom-left-radius: 4px; }
   .bub.in { align-self: flex-start; box-shadow: inset 0 0 0 1.5px var(--warn); }
+  .bub code { font-size: 12px; background: rgba(127,127,127,.16); border-radius: 4px; padding: 0 4px; }
   .bub .t { display: block; font-size: 10.5px; opacity: .8; margin-bottom: 2px; }
   .tools { font-size: 11.5px; color: var(--sub); }
   .tools summary { cursor: pointer; padding: 2px 4px; }
@@ -469,11 +470,13 @@ async function openWindow(id, role) {
 
 // Drawer: one session's conversation.
 let OPEN_ID = null, START = 0, OPENER = null;
+// Just enough Markdown to read Claude: **bold** and `code`. Escaped first, so nothing else gets through.
+const md = t => esc(t).replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>').replace(/`([^`\n]+)`/g, '<code>$1</code>');
 function bubble(it) {
   const t = it.at ? new Date(it.at).toLocaleTimeString() : '';
   if (it.who === 'tools') return `<details class="tools"><summary>${it.tools.length} tool call${it.tools.length > 1 ? 's' : ''}</summary><ol>${it.tools.map(x => `<li><b>${esc(x.name)}</b> ${esc(x.text)}</li>`).join('')}</ol></details>`;
   const from = it.who === 'in' ? `from ${esc(it.from)} · ` : '';
-  return `<div class="bub ${esc(it.who)}"><span class="t">${from}${esc(t)}</span>${esc(it.text)}</div>`;
+  return `<div class="bub ${esc(it.who)}"><span class="t">${from}${esc(t)}</span>${md(it.text)}</div>`;
 }
 // Changes: what a role changed, as files and a coloured patch.
 let DROLE = null;
@@ -519,7 +522,7 @@ async function openDrawer(id) {
   if (s) markSeen(s);
   const role = s?.role && LAST?.roles.find(r => r.name === s.role && !r.shared) ? s.role : null;
   DROLE = role; $('dtabs').hidden = !role; drawerTab('chat');
-  $('dname').textContent = s?.name ?? id.slice(0, 8);
+  $('dname').textContent = s?.role ?? s?.name ?? id.slice(0, 8);
   $('dbody').innerHTML = '<div class="empty">Loading…</div>';
   $('drawer').hidden = false; $('dx').focus();
   const r = await fetch('/api/log?id=' + encodeURIComponent(id));
