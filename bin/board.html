@@ -130,9 +130,24 @@
     min-height: 36px; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
   .dtabs button[aria-pressed="true"] { background: var(--page); color: var(--text); }
   .unread { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--me); margin-right: 6px; flex: none; }
-  .notify { appearance: none; border: 1px solid var(--hair); background: var(--surface); color: var(--sub); font-size: 12px;
-    border-radius: 999px; padding: 4px 10px; min-height: 28px; cursor: pointer; }
-  .notify[aria-pressed="true"] { color: var(--good); border-color: var(--good); }
+  .bellw { position: relative; align-self: center; }
+  .bell { appearance: none; border: 1px solid var(--hair); background: var(--surface); color: var(--sub); width: 36px; height: 36px;
+    border-radius: 50%; display: grid; place-items: center; cursor: pointer; position: relative; }
+  .bell:hover, .bell[aria-expanded="true"] { color: var(--text); border-color: var(--calm); }
+  .badge { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+    background: var(--live); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+  .bellp { position: absolute; right: 0; top: 42px; width: min(340px, calc(100vw - 32px)); background: var(--surface);
+    border: 1px solid var(--hair); border-radius: 12px; box-shadow: 0 8px 24px rgb(0 0 0 / .15); padding: 6px; z-index: 40; display: grid; gap: 2px; }
+  .bellp button { appearance: none; border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 8px;
+    color: var(--text); font-size: 13px; cursor: pointer; min-height: 36px; }
+  .bellp button:hover { background: var(--page); }
+  .bellp b { margin-right: 6px; }
+  .bellp .none { font-size: 12.5px; color: var(--faint); padding: 8px 10px; }
+  .bellp .allow { color: var(--calm); font-weight: 600; }
+  .pings { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 45; width: min(340px, calc(100vw - 32px)); }
+  .ping { appearance: none; text-align: left; border: 1px solid var(--hair); border-left: 4px solid var(--good); background: var(--surface);
+    color: var(--text); border-radius: 12px; padding: 10px 12px; box-shadow: 0 8px 24px rgb(0 0 0 / .18); cursor: pointer; font-size: 13px; }
+  .ping span { display: block; color: var(--sub); font-size: 12.5px; margin-top: 2px; }
   .files { font-size: 12.5px; display: grid; grid-template-columns: 1fr auto auto; gap: 2px 12px; font-variant-numeric: tabular-nums; }
   .files .a { color: var(--good); } .files .d { color: var(--live); }
   .patch { margin: 0; font: 12px/1.45 ui-monospace, Consolas, monospace; white-space: pre; overflow-x: auto;
@@ -175,8 +190,14 @@
   <div class="bar">
     <h1>agentsemble</h1>
     <span class="meta" id="tally"></span>
-    <button type="button" class="notify" id="notify" hidden>Notify me</button>
     <span class="meta repo" id="repo"></span>
+    <div class="bellw">
+      <button type="button" class="bell" id="bell" aria-haspopup="true" aria-expanded="false" aria-controls="bellp" aria-label="Alerts">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <span class="badge" id="badge" hidden></span>
+      </button>
+      <div class="bellp" id="bellp" hidden></div>
+    </div>
   </div>
 
   <div class="tabs" role="tablist" aria-label="Board">
@@ -191,6 +212,8 @@
   <section role="tabpanel" id="p-tools" aria-labelledby="t-tools" hidden></section>
   <section role="tabpanel" id="p-ledger" aria-labelledby="t-ledger" hidden></section>
 </div>
+
+<div class="pings" id="pings" aria-live="polite"></div>
 
 <aside class="drawer" id="drawer" role="dialog" aria-modal="false" aria-labelledby="dname" hidden>
   <div class="dh"><b id="dname"></b>
@@ -237,29 +260,49 @@ const lastAt = s => Date.parse(s.last?.at ?? '') || 0;
 const unread = s => lastAt(s) > (SEEN[s.id] ?? Infinity);
 function markSeen(s) { SEEN[s.id] = lastAt(s); try { localStorage.setItem('as-seen', JSON.stringify(SEEN)); } catch { /* */ } }
 
-// Notify when a window turns to "your turn". The browser asks permission once, on a click.
+// Alerts. The bell (top right) counts windows that finished and wait for you; click it for the list.
+// A window that just finished pops a card bottom right — or a desktop alert while this tab is hidden,
+// once the browser is allowed (asked from the bell, on a click).
 const CAN_NOTIFY = 'Notification' in window;
-let WAITING = null;                        // ids waiting last tick; null until the first tick
-function notifyButton() {
-  if (!CAN_NOTIFY) return;
-  const on = Notification.permission === 'granted';
-  $('notify').hidden = Notification.permission === 'denied';
-  $('notify').textContent = on ? 'Notifications on' : 'Notify me';
-  $('notify').setAttribute('aria-pressed', String(on));
+let WAITING = null, NOWWAIT = [];          // ids waiting last tick (null until the first tick); waiting now
+const who = s => s.role ?? s.name ?? s.id.slice(0, 8);
+function bellPanel() {
+  const perm = CAN_NOTIFY ? Notification.permission : 'denied';
+  $('bellp').innerHTML = (NOWWAIT.length
+    ? NOWWAIT.map(s => `<button type="button" data-open="${esc(s.id)}"><b>${esc(who(s))}</b>${esc(cut(s.last?.text ?? '', 90))}</button>`).join('')
+    : '<div class="none">No window is waiting for you.</div>')
+    + (perm === 'default' ? '<button type="button" class="allow" id="allow">Also alert me on the desktop</button>'
+      : perm === 'granted' ? '<div class="none">Desktop alerts on</div>' : '');
 }
-$('notify').onclick = async () => { if (CAN_NOTIFY && Notification.permission === 'default') await Notification.requestPermission(); notifyButton(); };
-notifyButton();
+const closeBell = () => { $('bellp').hidden = true; $('bell').setAttribute('aria-expanded', 'false'); };
+$('bell').onclick = e => {
+  e.stopPropagation();
+  if (!$('bellp').hidden) return closeBell();
+  bellPanel(); $('bellp').hidden = false; $('bell').setAttribute('aria-expanded', 'true');
+};
+$('bellp').addEventListener('click', async e => {
+  if (e.target.id === 'allow') { e.stopPropagation(); await Notification.requestPermission(); bellPanel(); }
+});
+function ping(s) {
+  const el = document.createElement('button');
+  el.type = 'button'; el.className = 'ping'; el.dataset.open = s.id;
+  el.innerHTML = `<b>${esc(who(s))}</b> finished — your turn<span>${esc(cut(s.last?.text ?? '', 120))}</span>`;
+  $('pings').append(el); setTimeout(() => el.remove(), 12000);
+}
 function watchWaiting(d) {
-  const now = d.sessions.filter(s => s.phase === 'waiting');
-  document.title = now.length ? `(${now.length}) agentsemble` : 'agentsemble';
-  if (WAITING && CAN_NOTIFY && Notification.permission === 'granted') {
-    for (const s of now) {
-      if (WAITING.has(s.id)) continue;
-      const n = new Notification(`${s.name ?? s.id.slice(0, 8)} is waiting for you`, { body: cut(s.last?.text ?? '', 140), tag: s.id });
+  NOWWAIT = d.sessions.filter(s => s.phase === 'waiting');
+  document.title = NOWWAIT.length ? `(${NOWWAIT.length}) agentsemble` : 'agentsemble';
+  $('badge').hidden = !NOWWAIT.length; $('badge').textContent = NOWWAIT.length;
+  $('bell').setAttribute('aria-label', NOWWAIT.length ? `Alerts: ${NOWWAIT.length} waiting for you` : 'Alerts');
+  if (WAITING) for (const s of NOWWAIT) {
+    if (WAITING.has(s.id)) continue;
+    if (document.hidden && CAN_NOTIFY && Notification.permission === 'granted') {
+      const n = new Notification(`${who(s)} finished — your turn`, { body: cut(s.last?.text ?? '', 140), tag: s.id });
       n.onclick = () => { window.focus(); openDrawer(s.id); n.close(); };
-    }
+    } else ping(s);
   }
-  WAITING = new Set(now.map(s => s.id));
+  WAITING = new Set(NOWWAIT.map(s => s.id));
+  if (!$('bellp').hidden) bellPanel();
 }
 
 // Folds survive the 2-second redraw.
@@ -422,6 +465,10 @@ async function tickOnce() {
 
 // Copy the resume command; where the clipboard is blocked, show it to copy by hand.
 document.addEventListener('click', e => {
+  if (!e.target.closest('.bellw')) closeBell();
+  const p = e.target.closest('.ping');
+  if (p) setTimeout(() => p.remove());
+  else if (e.target.closest('#bellp')) closeBell();
   const c = e.target.closest('[data-copy]');
   if (c) {
     e.stopPropagation();
@@ -446,6 +493,7 @@ document.addEventListener('click', e => {
   if (w) openDrawer(w.dataset.id ?? w.dataset.open);
 });
 document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('bellp').hidden) { closeBell(); $('bell').focus(); return; }
   if (e.key === 'Escape' && !$('drawer').hidden) closeDrawer();
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-copy],[data-win]')) { e.preventDefault(); e.target.click(); }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-open]')) { e.preventDefault(); openDrawer(e.target.dataset.open); }

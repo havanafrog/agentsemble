@@ -74,8 +74,9 @@ latest moves; click one for its conversation), **Tools** (planned vs installed, 
 Click a role on the Map or a session card: a side drawer opens with its **Conversation** and its
 **Changes** (files and the patch — its branch against main plus uncommitted work). Click a red clash
 to see both roles' edits of that file one above the other. A blue dot marks windows with something new
-since you last opened them; **Notify me** pops a desktop notification when a window turns to *your
-turn*, and the tab title shows how many are waiting.
+since you last opened them; when a window finishes and turns to *your
+turn*, a card pops up bottom right (a desktop notification instead while the tab is hidden, once
+allowed from the bell). The bell top right counts the windows waiting for you and lists them.
 
 > **The board shows full session transcripts.** It listens on 127.0.0.1 only. `--host` lets you
 > change that and prints a warning — don't expose it.

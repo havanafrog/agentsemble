@@ -51,11 +51,16 @@ export function focus(name, platform = process.platform) {
   });
 }
 
-/** The command a new terminal runs: resume a session, or start the role fresh (with its model). */
-export function command({ id = null, model = null } = {}) {
+/**
+ * The command a new terminal runs: resume a session, or start the role fresh (with its model).
+ * The role name becomes the window name so the board and SendMessage find it without /rename;
+ * a name with other characters is left out rather than quoted.
+ */
+export function command({ id = null, model = null, name = null } = {}) {
   if (id != null && !UUID.test(id)) return null;
   if (model != null && !/^[\w.-]+(\[\w+\])?$/.test(model)) return null;
-  return ['claude', ...(id ? ['--resume', id] : []), ...(model ? ['--model', model] : [])].join(' ');
+  const nm = name && /^[\w.-]+$/.test(name) ? name : null;
+  return ['claude', ...(id ? ['--resume', id] : []), ...(model ? ['--model', model] : []), ...(nm ? ['--name', nm] : [])].join(' ');
 }
 
 /** Open a new terminal in `dir` running `cmd`: 'opened' | 'unsupported' | 'bad' | 'failed'. */
@@ -81,20 +86,22 @@ export async function openWindow({ s, live, role }, platform = process.platform,
     const r = await find(live.named ? live.name : null, platform);
     return r === 'noname' ? 'unnamed' : r;
   }
-  return launch(role.dir, command({ id: s?.id ?? null, model: s ? null : role.model ?? null }), platform, run);
+  return launch(role.dir, command({ id: s?.id ?? null, model: s ? null : role.model ?? null, name: s ? null : role.name ?? null }), platform, run);
 }
 
 export async function selftest(ok) {
   ok('a session id must be a UUID before it reaches a command', command({ id: 'x; calc' }) === null && command({ id: '' }) === null);
   ok('a model name with shell characters is refused', command({ model: 'opus && calc' }) === null);
+  ok('the role name goes in as the window name; an odd one is left out', command({ model: 'opus', name: 'review' }) === 'claude --model opus --name review'
+     && command({ name: 'a b"' }) === 'claude');
   ok('resume and fresh-start commands', command({ id: '0123abcd-0000-4000-8000-0123456789ab' }) === 'claude --resume 0123abcd-0000-4000-8000-0123456789ab'
      && command({ model: 'opus' }) === 'claude --model opus' && command() === 'claude');
   const calls = [];
   const run = (...a) => { calls.push(a); return { unref() {} }; };
   ok('a closed session reopens in its role folder', await openWindow({ s: { id: '0123abcd-0000-4000-8000-0123456789ab' }, live: null, role: { dir: 'D:/w/ui' } }, 'win32', run) === 'opened'
      && calls[0][1].at(-1) === 'claude --resume 0123abcd-0000-4000-8000-0123456789ab' && calls[0][2].cwd === 'D:/w/ui');
-  ok('a role with no session starts fresh with its model', await openWindow({ s: null, live: null, role: { dir: 'D:/w', model: 'opus' } }, 'win32', run) === 'opened'
-     && calls[1][1].at(-1) === 'claude --model opus');
+  ok('a role with no session starts fresh with its model', await openWindow({ s: null, live: null, role: { dir: 'D:/w', model: 'opus', name: 'review' } }, 'win32', run) === 'opened'
+     && calls[1][1].at(-1) === 'claude --model opus --name review');
   ok('a live window is focused, never reopened', await openWindow({ s: { id: 'x' }, live: { named: true, name: 'ui' }, role: { dir: '.' } }, 'win32', run, async n => n === 'ui' ? 'ok' : 'notfound') === 'ok' && calls.length === 2);
   ok('a live window with no name says so', await openWindow({ s: { id: 'x' }, live: { named: false, name: 'x' }, role: { dir: '.' } }, 'win32', run, async n => n ? 'ok' : 'noname') === 'unnamed');
   ok('not Windows: nothing is launched', await openWindow({ s: null, live: null, role: { dir: '.' } }, 'linux', run) === 'unsupported' && calls.length === 2);
