@@ -26,6 +26,11 @@ export function loadAgents(repoRoot) {
   const roles = [];
   for (const [name, a] of Object.entries(raw)) {
     if (name.startsWith('$') || name === 'wishlist') continue;
+    // A task groups roles under their own tab on the board (main heads every tab).
+    if (a?.task != null && (typeof a.task !== 'string' || !a.task.trim() || a.task.length > 40)) {
+      throw new Error(`role "${name}": task must be a short name (up to 40 characters)`);
+    }
+    const task = a?.task?.trim() || null;
     // A role that only reads (review, research, watching logs) needs no folder of its own: it works
     // in the main folder, so it also runs with main's skills and plugins.
     if (a?.shared === true) {
@@ -38,12 +43,13 @@ export function loadAgents(repoRoot) {
       }
       if (a.autonomy != null && !AUTONOMY.includes(a.autonomy)) throw new Error(`role "${name}": autonomy must be one of ${AUTONOMY.join(', ')}`);
       roles.push({ name, dir: root, relDir: '.', branch: null, what: a.what ?? '', not: a.not ?? '', owns: a.owns ?? [],
-        skills: [], plugins: {}, isMain: false, shared: true, model: a.model ?? null, autonomy: a.autonomy ?? 'build' });
+        skills: [], plugins: {}, isMain: false, shared: true, model: a.model ?? null, autonomy: a.autonomy ?? 'build', task });
       continue;
     }
     if (!a || typeof a.dir !== 'string') throw new Error(`role "${name}" needs a "dir" (or "shared": true to work in the main folder)`);
     const dir = resolve(root, a.dir);
     const isMain = dir === root;
+    if (isMain && task) throw new Error(`role "${name}" is main, which heads every task — drop its "task"`);
     // Sub roles live beside the repo, or together in ../<repo>-team/ — never somewhere else on disk.
     const inTeam = dirname(dir) === join(parent, basename(root) + '-team');
     if (!isMain && dirname(dir) !== parent && !inTeam) {
@@ -73,11 +79,11 @@ export function loadAgents(repoRoot) {
     if (twin) throw new Error(`roles "${twin.name}" and "${name}" use the same dir ${a.dir}`);
     roles.push({ name, dir, relDir: a.dir, branch: a.branch ?? null, what: a.what ?? '', not: a.not ?? '',
       owns: a.owns ?? [], skills: a.skills ?? [], plugins: a.plugins ?? {}, isMain, shared: false,
-      model: a.model ?? null, autonomy: a.autonomy ?? 'build' });
+      model: a.model ?? null, autonomy: a.autonomy ?? 'build', task });
   }
   const mains = roles.filter(r => r.isMain);
   if (mains.length !== 1) throw new Error(`${AGENTS_FILE} needs exactly one main role (dir ".") — found ${mains.length}`);
-  return { roles, wishlist: Array.isArray(raw.wishlist) ? raw.wishlist : [] };
+  return { roles, title: typeof raw.$title === 'string' ? raw.$title : null, wishlist: Array.isArray(raw.wishlist) ? raw.wishlist : [] };
 }
 
 export function selftest(ok) {
@@ -133,6 +139,15 @@ export function selftest(ok) {
     ok('branch must be a valid ref', /branch/.test(threw(() => loadAgents(repo)) ?? ''));
     put({ main: { dir: '.' }, a: { dir: '../x', branch: 'a' }, b: { dir: '../x', branch: 'b' } });
     ok('two roles cannot share a dir', /same dir/.test(threw(() => loadAgents(repo)) ?? ''));
+    put({ $title: 'My app', main: { dir: '.' }, sim: { dir: '../x', branch: 'b', task: 'KORU sim' }, review: { shared: true, task: 'KORU sim' } });
+    const tk = loadAgents(repo);
+    ok('a role may belong to a task; the board title comes from $title',
+       tk.title === 'My app' && tk.roles.find(r => r.name === 'sim').task === 'KORU sim'
+       && tk.roles.find(r => r.name === 'review').task === 'KORU sim' && tk.roles[0].task === null);
+    put({ main: { dir: '.', task: 'x' } });
+    ok('main belongs to every task, so it cannot name one', /main/.test(threw(() => loadAgents(repo)) ?? ''));
+    put({ main: { dir: '.' }, ui: { dir: '../x', branch: 'b', task: 7 } });
+    ok('a task is a short name', /task/.test(threw(() => loadAgents(repo)) ?? ''));
     rmSync(join(repo, AGENTS_FILE));
     ok('missing file says so', /not found/.test(threw(() => loadAgents(repo)) ?? ''));
   } finally { rmSync(t, { recursive: true, force: true }); }

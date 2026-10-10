@@ -66,8 +66,12 @@ node "<plugin dir>/bin/board.mjs"        →  http://127.0.0.1:8740
   `.claude/settings.local.json` is written.
 
 ## The board
+**Tasks and projects.** Give roles a `"task"` in `agents.json` and they get their own tab above the
+board (main heads every tab); `"$title"` names the project tab. One board can watch several repos:
+`board.mjs --also ../other-repo` adds a tab for each. The bell top right and the red counts on the
+tabs show which windows wait for you.
+
 Four tabs: **Map** (above — main on top, a card per role: what its window is doing, the last order it got, the areas it owns and what it is changing now), **Sessions** (every session's
-Five tabs: **Map** (above), **Team** (main and its subs, the last order each sub got), **Sessions** (every session's
 latest moves; click one for its conversation), **Tools** (planned vs installed, per role —
 `missing` and `+` mark drift), **Ledger** (open claims first, finished ones folded).
 

@@ -66,6 +66,7 @@ One `main` plus 2-4 sub roles. For each role give:
 | plugins | which to switch on or off for this role |
 | model | the model tier, with a reason (see below) |
 | autonomy | `ask` · `build` · `run` — how far it goes before checking in (see below) |
+| task | optional — roles that serve one task (`"task": "KORU sim"`) get their own tab on the board |
 
 **Folders only where needed.** A folder (worktree) exists so two sessions editing at once don't
 overwrite each other — the way each developer on a team works in their own checkout. So only

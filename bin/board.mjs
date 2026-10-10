@@ -464,9 +464,10 @@ export function mapOf(root, roles, talk = []) {
 }
 
 /** Roles from agents.json; without one, the repo alone as main so the board still works. */
-function rolesOf(root) {
-  try { return loadAgents(root).roles; }
-  catch { return [{ name: 'main', dir: resolve(root), branch: null, what: '', skills: [], plugins: {}, isMain: true }]; }
+function rolesOf(root) { return teamFile(root).roles; }
+function teamFile(root) {
+  try { const a = loadAgents(root); return { roles: a.roles, title: a.title ?? basename(resolve(root)) }; }
+  catch { return { roles: [{ name: 'main', dir: resolve(root), branch: null, what: '', skills: [], plugins: {}, isMain: true, task: null }], title: basename(resolve(root)) }; }
 }
 
 /** Shared roles work in the main folder, so their windows land in main's log folder.
@@ -477,11 +478,11 @@ export function claimShared(sess, sharedNames) {
 }
 
 export function board(root, now = Date.now()) {
-  const roles = rolesOf(root);
+  const { roles, title } = teamFile(root);
   const names = sessionNames();
   const declared = new Set(roles.flatMap(r => r.skills));
   const views = roles.map(r => ({ name: r.name, dir: r.dir, branch: r.branch, what: r.what, model: r.model, autonomy: r.autonomy,
-    isMain: r.isMain, shared: !!r.shared, logDir: logDirOf(r.dir), kit: kitOf(r, declared) }));
+    isMain: r.isMain, shared: !!r.shared, task: r.task ?? null, logDir: logDirOf(r.dir), kit: kitOf(r, declared) }));
   // A shared role has no log folder of its own: read main's once, then hand its windows out.
   const sess = claimShared(views.filter(v => !v.shared).flatMap(v => sessions(v.logDir, now, v.name, names)),
     views.filter(v => v.shared).map(v => v.name)).sort((a, b) => a.idleMs - b.idleMs);
@@ -490,10 +491,10 @@ export function board(root, now = Date.now()) {
     .sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 60);
   const team = teamOf(sess);
   for (const s of sess) { delete s.sends; delete s.heard; }
-  const lf = ledgerPath();
+  const lf = ledgerPath(root);
   const all = readLedger(lf);
   return {
-    now, roles: views, sessions: sess, team, talk, map: mapOf(root, roles, talk),
+    now, title, roles: views, sessions: sess, team, talk, map: mapOf(root, roles, talk),
     live: liveSessions(sessionDir(), new Set(sess.map(s => s.id))),
     repo: repoState(root),
     open: openClaims(lf), groups: ledgerGroups(all),
@@ -523,20 +524,23 @@ function main(argv) {
   const port = Number(flag('port', DEFAULT_PORT));
   if (!Number.isInteger(port) || port < 1 || port > 65535) { console.error('--port needs a number between 1 and 65535'); process.exit(1); }
   const host = flag('host', '127.0.0.1');
-  const root = git(process.cwd(), 'rev-parse', '--show-toplevel') ?? process.cwd();
+  // This repo, plus any other repo given with --also (one board for several projects; a tab each).
+  const top = d => git(d, 'rev-parse', '--show-toplevel') ?? d;
+  const roots = [top(process.cwd()), ...argv.flatMap((a, i) => argv[i - 1] === '--also' ? [top(resolve(a))] : [])];
   createServer((req, res) => {
     if (!hostOk(req.headers.host, port, LOCAL.has(host) ? null : host)) return res.writeHead(403).end();
     const path = req.url.split('?')[0];
+    const q = new URL(req.url, 'http://x').searchParams;
+    const root = roots[Number(q.get('p') ?? 0)] ?? roots[0];
     const json = o => { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(o)); };
     try {
       // One board per 2 s however many tabs ask; on a slow disk (a container) requests would pile up.
       if (path === '/api/board') {
-        if (Date.now() - CACHE.at > 2000) CACHE = { at: Date.now(), v: board(root) };
+        if (Date.now() - CACHE.at > 2000) CACHE = { at: Date.now(), v: { projects: roots.map(r => board(r)) } };
         return json(CACHE.v);
       }
       if (path === '/api/open' && req.method === 'POST') {
         if (!sameOrigin(req.headers.origin, req.headers.host)) return res.writeHead(403).end();
-        const q = new URL(req.url, 'http://x').searchParams;
         const d = board(root), id = q.get('id'), roleName = q.get('role');
         const s = id ? d.sessions.find(x => x.id === id) : null;
         const role = d.roles.find(r => r.name === (s?.role ?? roleName));
@@ -547,14 +551,12 @@ function main(argv) {
         return;
       }
       if (path === '/api/log') {
-        const q = new URL(req.url, 'http://x').searchParams;
-        const file = logFile(q.get('id'), rolesOf(root).map(r => logDirOf(r.dir)));
+        const file = logFile(q.get('id'), roots.flatMap(r => rolesOf(r).map(x => logDirOf(x.dir))));
         if (!file) return res.writeHead(404).end();
         const num = k => (q.has(k) && /^\d+$/.test(q.get(k)) ? Number(q.get(k)) : null);
         return json(chatLog(file, { before: num('before'), from: num('from') }));
       }
       if (path === '/api/changes') {
-        const q = new URL(req.url, 'http://x').searchParams;
         const c = changesOf(root, rolesOf(root), q.get('role') ?? '', q.get('file'));
         return c ? json(c) : res.writeHead(404).end();
       }
@@ -567,7 +569,7 @@ function main(argv) {
       res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' }).end(String(e.message));
     }
   }).listen(port, host, () => {
-    console.log(`\n  agentsemble board  http://${LOCAL.has(host) ? host : '127.0.0.1'}:${port}\n  repo  ${root}\n`);
+    console.log(`\n  agentsemble board  http://${LOCAL.has(host) ? host : '127.0.0.1'}:${port}\n${roots.map(r => `  repo  ${r}\n`).join('')}`);
     if (!LOCAL.has(host)) {
       console.log(`  WARNING: the board shows full session transcripts. Anyone who can reach ${host}:${port} can read them.\n`);
     }
@@ -709,8 +711,11 @@ export function selftest(ok) {
       ok('role whose window was never opened is shown, not fatal', ui && ui.sessionIds.length === 0 && ui.kit.skills[0].st === 'plan');
       ok('log dir comes from the role path', ui.logDir.endsWith(projectSlug(join(t, 'app-ui'))));
       ok('board carries repo and ledger', bd.repo.branch === 'main' && Array.isArray(bd.open) && bd.groups);
+      writeFileSync(join(repo, 'agents.json'), JSON.stringify({ $title: 'App', main: { dir: '.' }, sim: { shared: true, task: 'sim run' } }));
+      const tb = board(repo);
+      ok('board carries its title and each role\'s task', tb.title === 'App' && tb.roles.find(r => r.name === 'sim').task === 'sim run');
       rmSync(join(repo, 'agents.json'));
-      ok('no agents.json: repo alone as main', board(repo).roles.map(r => r.name).join() === 'main');
+      ok('no agents.json: repo alone as main, titled by its folder', board(repo).roles.map(r => r.name).join() === 'main' && board(repo).title === 'app');
     } finally {
       if (old === undefined) delete process.env.CLAUDE_HOME; else process.env.CLAUDE_HOME = old;
       if (oldL === undefined) delete process.env.OPS_LEDGER; else process.env.OPS_LEDGER = oldL;

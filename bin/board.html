@@ -130,6 +130,12 @@
     min-height: 36px; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
   .dtabs button[aria-pressed="true"] { background: var(--page); color: var(--text); }
   .unread { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--me); margin-right: 6px; flex: none; }
+  .ptabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 2px 12px; }
+  .ptabs:empty { display: none; }
+  .ptab { appearance: none; border: 1px solid var(--hair); background: var(--surface); color: var(--sub); border-radius: 999px;
+    padding: 5px 14px; min-height: 34px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .ptab[aria-selected="true"] { color: var(--text); border-color: var(--text); }
+  .ptab .pn { background: var(--live); color: #fff; border-radius: 9px; min-width: 18px; padding: 0 5px; font-size: 11px; line-height: 18px; text-align: center; }
   .bellw { position: relative; align-self: center; }
   .bell { appearance: none; border: 1px solid var(--hair); background: var(--surface); color: var(--sub); width: 36px; height: 36px;
     border-radius: 50%; display: grid; place-items: center; cursor: pointer; position: relative; }
@@ -138,6 +144,8 @@
     background: var(--live); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
   .bellp { position: absolute; right: 0; top: 42px; width: min(340px, calc(100vw - 32px)); background: var(--surface);
     border: 1px solid var(--hair); border-radius: 12px; box-shadow: 0 8px 24px rgb(0 0 0 / .15); padding: 6px; z-index: 40; display: grid; gap: 2px; }
+  .bellp[hidden] { display: none; }
+  @media (max-width: 600px) { .wrap { position: relative; } .bar { padding-right: 46px; } .bellw { position: absolute; top: 14px; right: 16px; } }
   .bellp button { appearance: none; border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 8px;
     color: var(--text); font-size: 13px; cursor: pointer; min-height: 36px; }
   .bellp button:hover { background: var(--page); }
@@ -199,6 +207,8 @@
       <div class="bellp" id="bellp" hidden></div>
     </div>
   </div>
+
+  <div class="ptabs" id="ptabs" role="tablist" aria-label="Tasks"></div>
 
   <div class="tabs" role="tablist" aria-label="Board">
     <button class="tab" role="tab" id="t-map" aria-controls="p-map" aria-selected="true">Map<span class="n" id="n-map"></span></button>
@@ -423,6 +433,26 @@ const PREV = {};
 function paint(id, html) { if (PREV[id] === html) return; PREV[id] = html; $(id).innerHTML = html; }
 let FAILS = 0;
 
+// One tab per task: a project's own roles (no "task") under its title, each task's roles under the
+// task's name. main heads every tab of its project. Several projects come from board.mjs --also.
+let ALL = null, CUR = null;
+try { CUR = localStorage.getItem('as-task'); } catch { /* */ }
+function tasksOf(all) {
+  return all.projects.flatMap((d, p) => [{ key: p + ':', p, task: null, label: d.title },
+    ...[...new Set(d.roles.map(r => r.task).filter(Boolean))].map(t => ({ key: p + ':' + t, p, task: t, label: t }))]);
+}
+function viewOf(all, t) {
+  const d = all.projects[t.p];
+  const roles = d.roles.filter(r => r.isMain || (r.task ?? null) === t.task), names = new Set(roles.map(r => r.name));
+  const inTasks = new Set(d.roles.filter(r => r.task).map(r => r.name));
+  const mine = s => t.task ? names.has(s.role) : !inTasks.has(s.role);
+  return { ...d, p: t.p, roles, sessions: d.sessions.filter(mine),
+    map: d.map && { ...d.map, roles: d.map.roles.filter(r => names.has(r.name)), clashes: d.map.clashes.filter(c => c.who.some(w => names.has(w))) } };
+}
+function pickTask(key) { CUR = key; try { localStorage.setItem('as-task', key); } catch { /* */ } render(); }
+$('ptabs').addEventListener('click', e => { const b = e.target.closest('[data-task]'); if (b) pickTask(b.dataset.task); });
+const allSessions = () => ALL?.projects.flatMap(d => d.sessions) ?? [];
+
 let LAST = null;
 let BUSY = false;
 async function tick() {
@@ -431,22 +461,32 @@ async function tick() {
   try { await tickOnce(); } finally { BUSY = false; }
 }
 async function tickOnce() {
-  let d;
   try {
     const r = await fetch('/api/board', { cache: 'no-store' });
     if (!r.ok) { paint('tally', esc(`board error ${r.status}: ${(await r.text()).slice(0, 200)}`)); return; }
-    d = await r.json();
+    ALL = await r.json();
   } catch {
     // One missed beat is normal (a restart); say so only when it keeps failing.
     if (++FAILS >= 3) paint('tally', 'board server not reachable — is <code>board.mjs</code> still running?');
     return;
   }
   FAILS = 0;
-  LAST = d;
-  for (const s of d.sessions) {
+  for (const s of allSessions()) {
     if (!(s.id in SEEN) || (s.id === OPEN_ID && unread(s))) markSeen(s);
   }
-  watchWaiting(d);
+  watchWaiting({ sessions: allSessions() });
+  render();
+}
+function render() {
+  if (!ALL) return;
+  const tasks = tasksOf(ALL);
+  const t = tasks.find(x => x.key === CUR) ?? tasks[0];
+  CUR = t.key;
+  paint('ptabs', tasks.length < 2 ? '' : tasks.map(x => {
+    const n = viewOf(ALL, x).sessions.filter(s => s.phase === 'waiting' && !(x.task && s.role === 'main')).length;
+    return `<button type="button" role="tab" class="ptab" data-task="${esc(x.key)}" aria-selected="${x.key === t.key}">${esc(x.label)}${n ? `<span class="pn" aria-label="${n} waiting">${n}</span>` : ''}</button>`;
+  }).join(''));
+  const d = LAST = viewOf(ALL, t);
   const now = d.now;
   const off = d.roles.reduce((a, r) => a + [...r.kit.skills, ...r.kit.plugins].filter(i => i.st === 'miss' || i.st === 'extra').length, 0);
   paint('tally', `<b>${d.sessions.filter(s => s.phase !== 'stopped').length}</b> active · <b>${d.open.length}</b> open claims`
@@ -511,7 +551,7 @@ function toast(t) {
 async function openWindow(id, role) {
   const q = id ? 'id=' + encodeURIComponent(id) : 'role=' + encodeURIComponent(role ?? '');
   try {
-    const r = await fetch('/api/open?' + q, { method: 'POST' });
+    const r = await fetch(`/api/open?p=${LAST?.p ?? 0}&` + q, { method: 'POST' });
     toast(r.ok ? SAY[(await r.json()).result] ?? 'Done' : 'Could not open it (' + r.status + ')');
   } catch { toast('Board not reachable'); }
 }
@@ -541,7 +581,7 @@ function drawerTab(view) {
 async function showChanges(role) {
   drawerTab('diff');
   $('dbody').innerHTML = '<div class="empty">Loading…</div>';
-  const r = await fetch('/api/changes?role=' + encodeURIComponent(role));
+  const r = await fetch(`/api/changes?p=${LAST?.p ?? 0}&role=` + encodeURIComponent(role));
   if (!r.ok) { $('dbody').innerHTML = '<div class="empty">No changes to show.</div>'; return; }
   const c = await r.json();
   $('dbody').innerHTML = c.files.length
@@ -555,7 +595,7 @@ async function openClash(i) {
   $('dname').textContent = c.file; $('dtabs').hidden = true;
   $('drawer').hidden = false; $('dx').focus();
   const parts = await Promise.all(c.who.map(async who => {
-    const r = await fetch(`/api/changes?role=${encodeURIComponent(who)}&file=${encodeURIComponent(c.file)}`);
+    const r = await fetch(`/api/changes?p=${LAST?.p ?? 0}&role=${encodeURIComponent(who)}&file=${encodeURIComponent(c.file)}`);
     return `<div class="who">${esc(who)}</div>` + (r.ok ? patchHtml((await r.json()).patch || '(no diff)') : '<div class="empty">Not available.</div>');
   }));
   $('dbody').innerHTML = `<p class="fine">Both roles changed this file. Merge one, then have the other rebase on it.</p>` + parts.join('');
@@ -566,6 +606,10 @@ $('dt-diff').onclick = () => { if (DROLE) showChanges(DROLE); };
 async function openDrawer(id) {
   if ($('drawer').hidden) OPENER = document.activeElement;
   OPEN_ID = id;
+  if (!LAST?.sessions.some(x => x.id === id) && ALL) {
+    const t = tasksOf(ALL).find(x => viewOf(ALL, x).sessions.some(y => y.id === id && !(x.task && y.role === 'main')));
+    if (t) pickTask(t.key);
+  }
   const s = LAST?.sessions.find(x => x.id === id);
   if (s) markSeen(s);
   const role = s?.role && LAST?.roles.find(r => r.name === s.role && !r.shared) ? s.role : null;
