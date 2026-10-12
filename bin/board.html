@@ -117,18 +117,32 @@
   th { font-weight: 650; color: var(--sub); font-size: 11.5px; }
   .fine { font-size: 11.5px; color: var(--sub); margin: 8px 2px 0; }
 
-  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(580px, 100vw); background: var(--surface);
-    box-shadow: -8px 0 32px rgba(0,0,0,.18); display: flex; flex-direction: column; z-index: 10; }
+  /* Conversation drawer. A scrim sits behind it: the first click outside only closes the drawer,
+     so it never lands on a card or button underneath. */
+  .scrim { position: fixed; inset: 0; background: rgb(10 14 20 / .28); z-index: 9; }
+  .scrim[hidden] { display: none; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); background: var(--page);
+    border-radius: 20px 0 0 20px; overflow: hidden;
+    box-shadow: -1px 0 0 var(--hair), -16px 0 48px rgb(0 0 0 / .18); display: flex; flex-direction: column; z-index: 10; }
   .drawer[hidden] { display: none; }
-  .dh { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--hair); }
-  .dh b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 600px) { .drawer { border-radius: 0; } }
+  @media (prefers-reduced-motion: no-preference) {
+    .drawer:not([hidden]) { animation: din .2s cubic-bezier(.2,.8,.2,1); }
+    .scrim:not([hidden]) { animation: fin .2s ease-out; }
+    @keyframes din { from { transform: translateX(40px); opacity: .4; } }
+    @keyframes fin { from { opacity: 0; } }
+  }
+  .dh { display: flex; align-items: center; gap: 10px; padding: 10px 8px 10px 18px; min-height: 60px;
+    background: var(--surface); border-bottom: 1px solid var(--hair); flex-wrap: wrap; }
+  .dh b { font-size: 16px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .x { appearance: none; border: 0; background: none; font-size: 18px; color: var(--sub); cursor: pointer;
-    margin-left: auto; width: 44px; height: 44px; border-radius: 8px; flex: none; }
+    margin-left: auto; width: 44px; height: 44px; border-radius: 12px; flex: none; }
   .x:hover { background: var(--page); color: var(--text); }
-  .dtabs { display: flex; gap: 2px; flex: none; }
+  .x:focus-visible { outline: 2px solid var(--calm); outline-offset: -2px; }
+  .dtabs { display: flex; gap: 2px; flex: none; padding: 3px; border-radius: 12px; background: var(--page); }
   .dtabs button { appearance: none; border: 0; background: none; font-size: 12.5px; font-weight: 650; color: var(--sub);
-    min-height: 36px; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
-  .dtabs button[aria-pressed="true"] { background: var(--page); color: var(--text); }
+    min-height: 36px; padding: 6px 12px; border-radius: 9px; cursor: pointer; }
+  .dtabs button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / .12); }
   .unread { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--me); margin-right: 6px; flex: none; }
   .ptabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 2px 12px; }
   .ptabs:empty { display: none; }
@@ -137,25 +151,62 @@
   .ptab[aria-selected="true"] { color: var(--text); border-color: var(--text); }
   .ptab .pn { background: var(--live); color: #fff; border-radius: 9px; min-width: 18px; padding: 0 5px; font-size: 11px; line-height: 18px; text-align: center; }
   .bellw { position: relative; align-self: center; }
-  .bell { appearance: none; border: 1px solid var(--hair); background: var(--surface); color: var(--sub); width: 36px; height: 36px;
+  /* The bell. Its look says whether desktop alerts are on: filled blue with a green dot = on,
+     outline = not asked yet, slashed = blocked by the browser. */
+  .bell { appearance: none; border: 1px solid var(--hair); background: var(--surface); color: var(--sub); width: 40px; height: 40px;
     border-radius: 50%; display: grid; place-items: center; cursor: pointer; position: relative; }
   .bell:hover, .bell[aria-expanded="true"] { color: var(--text); border-color: var(--calm); }
+  .bell:focus-visible { outline: 2px solid var(--calm); outline-offset: 2px; }
+  .bell .ico { display: none; }
+  .bell[data-alerts="off"] .ico.off, .bell[data-alerts="on"] .ico.on, .bell[data-alerts="blocked"] .ico.blocked { display: block; }
+  .bell[data-alerts="on"] { color: var(--calm); background: color-mix(in srgb, var(--calm) 12%, var(--surface));
+    border-color: color-mix(in srgb, var(--calm) 45%, var(--hair)); }
+  .bell[data-alerts="on"]::after { content: ''; position: absolute; left: 1px; bottom: 1px; width: 10px; height: 10px; border-radius: 50%;
+    background: var(--good); box-shadow: 0 0 0 2px var(--surface); }
+  .bell[data-alerts="blocked"] { color: var(--faint); }
   .badge { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
-    background: var(--live); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
-  .bellp { position: absolute; right: 0; top: 42px; width: min(340px, calc(100vw - 32px)); background: var(--surface);
-    border: 1px solid var(--hair); border-radius: 12px; box-shadow: 0 8px 24px rgb(0 0 0 / .15); padding: 6px; z-index: 40; display: grid; gap: 2px; }
+    background: var(--live); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+    box-shadow: 0 0 0 2px var(--surface); }
+  .bellp { position: absolute; right: 0; top: 48px; width: min(360px, calc(100vw - 32px)); background: var(--surface);
+    border: 1px solid var(--hair); border-radius: 16px; box-shadow: 0 12px 36px rgb(0 0 0 / .18); padding: 6px; z-index: 40; display: grid; gap: 2px; }
   .bellp[hidden] { display: none; }
+  @media (prefers-reduced-motion: no-preference) {
+    .bellp:not([hidden]) { animation: pin .16s ease-out; transform-origin: top right; }
+    @keyframes pin { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
+  }
+  .bellp .ph2 { display: flex; align-items: baseline; gap: 8px; padding: 8px 10px 6px; font-size: 13px; font-weight: 700; }
+  .bellp .ph2 span { font-size: 12px; font-weight: 600; color: var(--sub); }
+  .bellp .item { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; align-items: start; }
+  .bellp .item .role { margin-top: 2px; }
+  .bellp .item .msg { font-size: 12.5px; color: var(--sub); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .bellp .item .agoi { grid-column: 2; font-size: 11px; color: var(--sub); font-variant-numeric: tabular-nums; }
+  .bellp .empty2 { display: grid; place-items: center; gap: 4px; padding: 18px 10px; color: var(--faint); font-size: 12.5px; text-align: center; }
+  .bellp .foot2 { display: flex; align-items: center; gap: 8px; margin-top: 4px; padding: 10px 10px 6px; border-top: 1px solid var(--hair);
+    font-size: 12px; color: var(--sub); }
+  /* The word stays in body colour (tinted text on a tint read 3.6:1); the dot carries the colour. */
+  .bellp .state { margin-left: auto; font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 2px 9px 2px 8px;
+    color: var(--text); background: var(--page); display: inline-flex; align-items: center; gap: 5px; }
+  .bellp .state::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .bellp .state.on { background: color-mix(in srgb, var(--good) 14%, var(--surface)); }
+  .bellp .state.on::before { background: var(--good); }
+  .bellp .state.blocked { background: color-mix(in srgb, var(--live) 12%, var(--surface)); }
+  .bellp .state.blocked::before { background: var(--live); }
   @media (max-width: 600px) { .wrap { position: relative; } .bar { padding-right: 46px; } .bellw { position: absolute; top: 14px; right: 16px; } }
-  .bellp button { appearance: none; border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 8px;
-    color: var(--text); font-size: 13px; cursor: pointer; min-height: 36px; }
-  .bellp button:hover { background: var(--page); }
-  .bellp b { margin-right: 6px; }
-  .bellp .none { font-size: 12.5px; color: var(--faint); padding: 8px 10px; }
-  .bellp .allow { color: var(--calm); font-weight: 600; }
+  .bellp button { appearance: none; border: 0; background: none; text-align: left; padding: 10px; border-radius: 12px;
+    color: var(--text); font-size: 13px; cursor: pointer; min-height: 44px; }
+  .bellp button:hover, .bellp button:focus-visible { background: var(--page); outline: none; }
+  /* Page colour on blue: white on the light-blue of the dark theme read 2.4:1. */
+  .bellp .allow { color: var(--page); background: var(--calm); font-weight: 700; text-align: center; margin: 2px 4px 4px; }
+  .bellp .allow:hover, .bellp .allow:focus-visible { background: var(--calm); filter: brightness(1.08); }
   .pings { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 45; width: min(340px, calc(100vw - 32px)); }
-  .ping { appearance: none; text-align: left; border: 1px solid var(--hair); border-left: 4px solid var(--good); background: var(--surface);
-    color: var(--text); border-radius: 12px; padding: 10px 12px; box-shadow: 0 8px 24px rgb(0 0 0 / .18); cursor: pointer; font-size: 13px; }
-  .ping span { display: block; color: var(--sub); font-size: 12.5px; margin-top: 2px; }
+  .ping { appearance: none; text-align: left; border: 1px solid var(--hair); background: var(--surface); position: relative; overflow: hidden;
+    color: var(--text); border-radius: 16px; padding: 12px 14px 12px 18px; box-shadow: 0 12px 32px rgb(0 0 0 / .18); cursor: pointer; font-size: 13px; min-height: 44px; }
+  .ping::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--good); }
+  .ping span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--sub); font-size: 12.5px; margin-top: 3px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .ping { animation: pup .22s cubic-bezier(.2,.8,.2,1); }
+    @keyframes pup { from { opacity: 0; transform: translateY(10px); } }
+  }
   .files { font-size: 12.5px; display: grid; grid-template-columns: 1fr auto auto; gap: 2px 12px; font-variant-numeric: tabular-nums; }
   .files .a { color: var(--good); } .files .d { color: var(--live); }
   .patch { margin: 0; font: 12px/1.45 ui-monospace, Consolas, monospace; white-space: pre; overflow-x: auto;
@@ -163,18 +214,19 @@
   .patch .a { color: var(--good); } .patch .d { color: var(--live); } .patch .h { color: var(--faint); }
   .who { font-weight: 650; font-size: 13px; margin-top: 6px; }
   .clashes button { appearance: none; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; padding: 2px; }
-  .db { flex: 1; overflow-y: auto; padding: 12px 16px 24px; display: flex; flex-direction: column; gap: 8px; overscroll-behavior: contain; }
-  .more { align-self: center; appearance: none; border: 0; background: var(--page); color: var(--sub);
-    font-size: 12px; padding: 8px 16px; border-radius: 999px; cursor: pointer; min-height: 36px; }
-  .bub { max-width: 86%; padding: 8px 12px; border-radius: 14px; font-size: 13px; line-height: 1.55;
+  .db { flex: 1; overflow-y: auto; padding: 16px 16px 28px; display: flex; flex-direction: column; gap: 10px; overscroll-behavior: contain; }
+  .more { align-self: center; appearance: none; border: 0; background: var(--surface); box-shadow: var(--ring); color: var(--sub);
+    font-size: 12px; font-weight: 600; padding: 8px 16px; border-radius: 999px; cursor: pointer; min-height: 36px; }
+  .bub { max-width: 86%; padding: 9px 13px; border-radius: 18px; font-size: 13.5px; line-height: 1.55;
     word-break: break-word; white-space: pre-wrap; }
-  .bub.me { align-self: flex-end; background: var(--me); color: #fff; border-bottom-right-radius: 4px; }
-  .bub.claude { align-self: flex-start; background: var(--page); border-bottom-left-radius: 4px; }
-  .bub.in { align-self: flex-start; box-shadow: inset 0 0 0 1.5px var(--warn); }
+  .bub.me { align-self: flex-end; background: var(--me); color: #fff; border-bottom-right-radius: 6px; }
+  .bub.claude { align-self: flex-start; background: var(--surface); box-shadow: var(--ring), 0 1px 2px rgb(0 0 0 / .05); border-bottom-left-radius: 6px; }
+  .bub.in { align-self: flex-start; background: var(--surface); box-shadow: inset 3px 0 0 var(--warn), var(--ring); border-bottom-left-radius: 6px; }
   .bub code { font-size: 12px; background: rgba(127,127,127,.16); border-radius: 4px; padding: 0 4px; }
-  .bub .t { display: block; font-size: 10.5px; opacity: .8; margin-bottom: 2px; }
-  .tools { font-size: 11.5px; color: var(--sub); }
-  .tools summary { cursor: pointer; padding: 2px 4px; }
+  .bub .t { display: block; font-size: 10.5px; opacity: .8; margin-bottom: 3px; font-variant-numeric: tabular-nums; }
+  .tools { font-size: 11.5px; color: var(--sub); align-self: flex-start; max-width: 86%;
+    background: var(--surface); box-shadow: var(--ring); border-radius: 12px; padding: 2px 8px; }
+  .tools summary { cursor: pointer; padding: 6px 4px; min-height: 32px; }
   .tools ol { margin: 4px 0; padding-left: 22px; }
   .tools li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   @media (prefers-reduced-motion: no-preference) { .win { transition: box-shadow .15s; } }
@@ -200,8 +252,10 @@
     <span class="meta" id="tally"></span>
     <span class="meta repo" id="repo"></span>
     <div class="bellw">
-      <button type="button" class="bell" id="bell" aria-haspopup="true" aria-expanded="false" aria-controls="bellp" aria-label="Alerts">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      <button type="button" class="bell" id="bell" data-alerts="off" aria-haspopup="true" aria-expanded="false" aria-controls="bellp" aria-label="Alerts">
+        <svg class="ico off" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <svg class="ico on" width="19" height="19" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" fill="none"/></svg>
+        <svg class="ico blocked" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 9.3-5"/><path d="M18 8c0 7 3 9 3 9H9"/><path d="M6 8c0 4-1 6.5-2 7.7"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="M3 3l18 18"/></svg>
         <span class="badge" id="badge" hidden></span>
       </button>
       <div class="bellp" id="bellp" hidden></div>
@@ -225,6 +279,7 @@
 
 <div class="pings" id="pings" aria-live="polite"></div>
 
+<div class="scrim" id="scrim" hidden></div>
 <aside class="drawer" id="drawer" role="dialog" aria-modal="false" aria-labelledby="dname" hidden>
   <div class="dh"><b id="dname"></b>
     <span class="dtabs" id="dtabs" hidden><button type="button" id="dt-chat" aria-pressed="true">Conversation</button><button type="button" id="dt-diff" aria-pressed="false">Changes</button></span>
@@ -276,13 +331,24 @@ function markSeen(s) { SEEN[s.id] = lastAt(s); try { localStorage.setItem('as-se
 const CAN_NOTIFY = 'Notification' in window;
 let WAITING = null, NOWWAIT = [];          // ids waiting last tick (null until the first tick); waiting now
 const who = s => s.role ?? s.name ?? s.id.slice(0, 8);
+// Desktop alerts: on (allowed), off (not asked yet) or blocked (denied, or no Notification here).
+const alertState = () => !CAN_NOTIFY ? 'blocked' : { granted: 'on', default: 'off' }[Notification.permission] ?? 'blocked';
+const ALERT_WORD = { on: 'desktop alerts on', off: 'desktop alerts off', blocked: 'desktop alerts blocked' };
+function bellLook() {
+  const st = alertState();
+  $('bell').dataset.alerts = st;
+  $('bell').setAttribute('aria-label', (NOWWAIT.length ? `Alerts: ${NOWWAIT.length} waiting for you` : 'Alerts') + ' · ' + ALERT_WORD[st]);
+}
 function bellPanel() {
-  const perm = CAN_NOTIFY ? Notification.permission : 'denied';
-  $('bellp').innerHTML = (NOWWAIT.length
-    ? NOWWAIT.map(s => `<button type="button" data-open="${esc(s.id)}"><b>${esc(who(s))}</b>${esc(cut(s.last?.text ?? '', 90))}</button>`).join('')
-    : '<div class="none">No window is waiting for you.</div>')
-    + (perm === 'default' ? '<button type="button" class="allow" id="allow">Also alert me on the desktop</button>'
-      : perm === 'granted' ? '<div class="none">Desktop alerts on</div>' : '');
+  const st = alertState(), now = Date.now();
+  $('bellp').innerHTML = `<div class="ph2">Waiting for you<span>${NOWWAIT.length || ''}</span></div>`
+    + (NOWWAIT.length
+      ? NOWWAIT.map(s => `<button type="button" class="item" data-open="${esc(s.id)}"><span class="role${s.role === 'main' ? '' : ' sub'}">${esc(who(s))}</span>`
+        + `<span class="msg">${esc(cut(s.last?.text ?? '', 140))}</span><span class="agoi">${esc(ago(now - lastAt(s)))}</span></button>`).join('')
+      : '<div class="empty2"><span aria-hidden="true">✓</span>No window is waiting for you.</div>')
+    + `<div class="foot2">Desktop alerts<span class="state ${st}">${{ on: 'On', off: 'Off', blocked: 'Blocked' }[st]}</span></div>`
+    + (st === 'off' ? '<button type="button" class="allow" id="allow">Turn on desktop alerts</button>'
+      : st === 'blocked' && CAN_NOTIFY ? '<div class="empty2">Allow notifications for this page in the browser settings.</div>' : '');
 }
 const closeBell = () => { $('bellp').hidden = true; $('bell').setAttribute('aria-expanded', 'false'); };
 $('bell').onclick = e => {
@@ -291,7 +357,7 @@ $('bell').onclick = e => {
   bellPanel(); $('bellp').hidden = false; $('bell').setAttribute('aria-expanded', 'true');
 };
 $('bellp').addEventListener('click', async e => {
-  if (e.target.id === 'allow') { e.stopPropagation(); await Notification.requestPermission(); bellPanel(); }
+  if (e.target.id === 'allow') { e.stopPropagation(); await Notification.requestPermission(); bellPanel(); bellLook(); }
 });
 function ping(s) {
   const el = document.createElement('button');
@@ -303,7 +369,7 @@ function watchWaiting(d) {
   NOWWAIT = d.sessions.filter(s => s.phase === 'waiting');
   document.title = NOWWAIT.length ? `(${NOWWAIT.length}) agentsemble` : 'agentsemble';
   $('badge').hidden = !NOWWAIT.length; $('badge').textContent = NOWWAIT.length;
-  $('bell').setAttribute('aria-label', NOWWAIT.length ? `Alerts: ${NOWWAIT.length} waiting for you` : 'Alerts');
+  bellLook();
   if (WAITING) for (const s of NOWWAIT) {
     if (WAITING.has(s.id)) continue;
     if (document.hidden && CAN_NOTIFY && Notification.permission === 'granted') {
@@ -524,7 +590,7 @@ document.addEventListener('click', e => {
     const last = LAST?.sessions.filter(x => x.role === df.dataset.diff).sort((x, y) => x.idleMs - y.idleMs)[0];
     if (last) return openDrawer(last.id).then(() => showChanges(df.dataset.diff));
     OPENER = document.activeElement; OPEN_ID = null; DROLE = df.dataset.diff;
-    $('dname').textContent = DROLE; $('dtabs').hidden = false; $('drawer').hidden = false; $('dx').focus();
+    $('dname').textContent = DROLE; $('dtabs').hidden = false; showDrawer(); $('dx').focus();
     return showChanges(DROLE);
   }
   const k = e.target.closest('[data-clash]');
@@ -593,7 +659,7 @@ async function openClash(i) {
   if (!c) return;
   OPEN_ID = null; DROLE = null; OPENER = document.activeElement;
   $('dname').textContent = c.file; $('dtabs').hidden = true;
-  $('drawer').hidden = false; $('dx').focus();
+  showDrawer(); $('dx').focus();
   const parts = await Promise.all(c.who.map(async who => {
     const r = await fetch(`/api/changes?p=${LAST?.p ?? 0}&role=${encodeURIComponent(who)}&file=${encodeURIComponent(c.file)}`);
     return `<div class="who">${esc(who)}</div>` + (r.ok ? patchHtml((await r.json()).patch || '(no diff)') : '<div class="empty">Not available.</div>');
@@ -616,7 +682,7 @@ async function openDrawer(id) {
   DROLE = role; $('dtabs').hidden = !role; drawerTab('chat');
   $('dname').textContent = s?.role ?? s?.name ?? id.slice(0, 8);
   $('dbody').innerHTML = '<div class="empty">Loading…</div>';
-  $('drawer').hidden = false; $('dx').focus();
+  showDrawer(); $('dx').focus();
   const r = await fetch('/api/log?id=' + encodeURIComponent(id));
   if (!r.ok) { $('dbody').innerHTML = '<div class="empty">Log not found.</div>'; return; }
   const j = await r.json();
@@ -631,8 +697,11 @@ $('dbody').addEventListener('click', async e => {
   e.target.remove();
   $('dbody').insertAdjacentHTML('afterbegin', (START > 0 ? '<button class="more" id="more" type="button">Earlier</button>' : '') + j.items.map(bubble).join(''));
 });
-function closeDrawer() { $('drawer').hidden = true; OPEN_ID = null; DROLE = null; OPENER?.focus?.(); }
+function showDrawer() { $('drawer').hidden = false; $('scrim').hidden = false; }
+function closeDrawer() { $('drawer').hidden = true; $('scrim').hidden = true; OPEN_ID = null; DROLE = null; OPENER?.focus?.(); }
 $('dx').onclick = closeDrawer;
+// Outside the drawer: the scrim takes the click and only closes — nothing underneath is pressed.
+$('scrim').addEventListener('click', e => { e.stopPropagation(); closeDrawer(); });
 
 tick();
 // A hidden tab does not need a board; catch up the moment it is shown again.
