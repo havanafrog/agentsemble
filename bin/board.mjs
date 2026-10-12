@@ -332,10 +332,20 @@ export function teamOf(sess) {
 }
 
 function git(root, ...a) { return gitRaw(root, ...a)?.trim() ?? null; }
+// The server keeps git answers for GIT_TTL. A board runs git a dozen times and each start costs ~75 ms,
+// seconds where antivirus scans every new process; the server is single-threaded, so the chat drawer
+// waited behind it. Git state moves on commits and edits, not every 2 s. Off in tests: they want git fresh.
+const GIT_TTL = 15_000;
+let gitMemo = null;
 // Untrimmed: porcelain lines start with a status column that may be a space.
 function gitRaw(root, ...a) {
-  try { return execFileSync('git', ['-C', root, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); }
-  catch { return null; }
+  const k = [root, ...a].join('\0'), hit = gitMemo?.get(k);
+  if (hit && Date.now() - hit.at < GIT_TTL) return hit.v;
+  let v;
+  try { v = execFileSync('git', ['-C', root, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); }
+  catch { v = null; }
+  gitMemo?.set(k, { at: Date.now(), v });
+  return v;
 }
 /** Branch, head commit, uncommitted paths, commits ahead of upstream (null = no upstream, not 0). */
 export function repoState(root) {
@@ -477,6 +487,10 @@ export function claimShared(sess, sharedNames) {
   return sess;
 }
 
+// Where a repo's ledger lives doesn't change while the board runs; finding it costs a git start.
+const LEDGERS = new Map();
+const ledgerOf = root => gitMemo ? LEDGERS.get(root) ?? LEDGERS.set(root, ledgerPath(root)).get(root) : ledgerPath(root);
+
 export function board(root, now = Date.now()) {
   const { roles, title } = teamFile(root);
   const names = sessionNames();
@@ -491,7 +505,7 @@ export function board(root, now = Date.now()) {
     .sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 60);
   const team = teamOf(sess);
   for (const s of sess) { delete s.sends; delete s.heard; }
-  const lf = ledgerPath(root);
+  const lf = ledgerOf(root);
   const all = readLedger(lf);
   return {
     now, title, roles: views, sessions: sess, team, talk, map: mapOf(root, roles, talk),
@@ -524,6 +538,7 @@ function main(argv) {
   const port = Number(flag('port', DEFAULT_PORT));
   if (!Number.isInteger(port) || port < 1 || port > 65535) { console.error('--port needs a number between 1 and 65535'); process.exit(1); }
   const host = flag('host', '127.0.0.1');
+  gitMemo = new Map();
   // This repo, plus any other repo given with --also (one board for several projects; a tab each).
   const top = d => git(d, 'rev-parse', '--show-toplevel') ?? d;
   const roots = [top(process.cwd()), ...argv.flatMap((a, i) => argv[i - 1] === '--also' ? [top(resolve(a))] : [])];
@@ -702,6 +717,13 @@ export function selftest(ok) {
     // A whole repo: agents.json with a sub role whose window was never opened.
     const repo = join(t, 'app'); mkdirSync(repo);
     execFileSync('git', ['-C', repo, 'init', '-q', '-b', 'main']);
+    gitMemo = new Map();
+    const before = gitRaw(repo, 'status', '--porcelain');
+    writeFileSync(join(repo, 'x.txt'), 'x');
+    const kept = gitRaw(repo, 'status', '--porcelain');
+    for (const v of gitMemo.values()) v.at -= GIT_TTL;
+    ok('the server keeps git answers for a while, then asks again', kept === before && gitRaw(repo, 'status', '--porcelain').includes('x.txt'));
+    gitMemo = null; rmSync(join(repo, 'x.txt'));
     writeFileSync(join(repo, 'agents.json'), JSON.stringify({ main: { dir: '.' }, ui: { dir: '../app-ui', branch: 'u', skills: ['taste'] } }));
     const old = process.env.CLAUDE_HOME, oldL = process.env.OPS_LEDGER;
     process.env.CLAUDE_HOME = join(t, 'home'); process.env.OPS_LEDGER = join(t, 'ledger.jsonl');
