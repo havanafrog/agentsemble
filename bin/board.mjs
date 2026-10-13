@@ -338,26 +338,40 @@ function git(root, ...a) { return gitRaw(root, ...a)?.trim() ?? null; }
 // again in the background once it is GIT_TTL old (counted from when the answer came back).
 // Off in tests and one-shot use: there git runs in line and is always fresh.
 const GIT_TTL = 15_000;
-const GIT_OPT = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, maxBuffer: 64 << 20 };
+// A git that hangs (antivirus, a network drive) is killed and counts as no answer, so nothing waits forever.
+const GIT_OPT = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, maxBuffer: 64 << 20, timeout: 30_000 };
+const GIT_FORGET = 10 * 60_000;  // answers nobody asked for in this long are dropped (old diffs, old branches)
 let gitMemo = null;            // key -> { at, v }
 const gitAsking = new Map();   // key -> promise of the answer on its way
+let gitWatch = null;           // settled(): the answers its fn is waiting on
 // Untrimmed: porcelain lines start with a status column that may be a space.
 function gitRaw(root, ...a) {
   const args = ['-C', root, ...a];
   if (!gitMemo) { try { return execFileSync('git', args, GIT_OPT); } catch { return null; } }
   const k = args.join('\0'), hit = gitMemo.get(k);
   if ((!hit || Date.now() - hit.at >= GIT_TTL) && !gitAsking.has(k)) {
-    gitAsking.set(k, new Promise(done => execFile('git', args, GIT_OPT, (err, out) => {
-      gitMemo.set(k, { at: Date.now(), v: err ? null : out }); gitAsking.delete(k); done();
-    })));
+    gitAsking.set(k, new Promise(done => {
+      const keep = v => {
+        const now = Date.now();
+        for (const [x, e] of gitMemo) if (now - e.at > GIT_FORGET) gitMemo.delete(x);
+        gitMemo.set(k, { at: now, v }); gitAsking.delete(k); done();
+      };
+      try { execFile('git', args, GIT_OPT, (err, out) => keep(err ? null : out)); } catch { keep(null); }
+    }));
   }
+  if (gitAsking.has(k)) gitWatch?.add(gitAsking.get(k));
   return hit ? hit.v : null;
 }
-/** fn() again once every git answer it asked for has come back — for a fresh view on demand. */
+/** fn() again once the git answers it asked for have come back — for a fresh view on demand.
+ *  Waits only on its own answers, and at most three rounds. */
 async function settled(fn) {
-  let v = fn();
-  while (gitAsking.size) { await Promise.all(gitAsking.values()); v = fn(); }
-  return v;
+  for (let round = 1; ; round++) {
+    const wait = gitWatch = new Set();
+    let v;
+    try { v = fn(); } finally { gitWatch = null; }
+    if (!wait.size || round === 3) return v;
+    await Promise.all(wait);
+  }
 }
 /** Branch, head commit, uncommitted paths, commits ahead of upstream (null = no upstream, not 0). */
 export function repoState(root) {
@@ -554,8 +568,10 @@ async function main(argv) {
   const top = d => git(d, 'rev-parse', '--show-toplevel') ?? d;
   const roots = [top(process.cwd()), ...argv.flatMap((a, i) => argv[i - 1] === '--also' ? [top(resolve(a))] : [])];
   gitMemo = new Map();
-  // The first board waits for git once, so the page never opens on blanks.
-  CACHE = { at: Date.now(), v: { projects: await settled(() => roots.map(r => board(r))) } };
+  // The first board waits for git once, so the page never opens on blanks. If it fails, the first
+  // request builds it again and shows the error, as any request would.
+  try { CACHE = { at: Date.now(), v: { projects: await settled(() => roots.map(r => board(r))) } }; }
+  catch (e) { console.error(`  first board failed: ${e.message}`); }
   createServer((req, res) => {
     if (!hostOk(req.headers.host, port, LOCAL.has(host) ? null : host)) return res.writeHead(403).end();
     const path = req.url.split('?')[0];
@@ -573,8 +589,8 @@ async function main(argv) {
         // The board the page is showing has the sessions and roles; only a window newer than it needs
         // a fresh one. Whether the window is open right now is read fresh — it is one small folder.
         const id = q.get('id'), roleName = q.get('role');
-        let d = CACHE.v.projects[roots.indexOf(root)];
-        if (id && !d.sessions.some(x => x.id === id)) d = board(root);
+        let d = CACHE.v?.projects[roots.indexOf(root)];
+        if (!d || (id && !d.sessions.some(x => x.id === id))) d = board(root);
         const s = id ? d.sessions.find(x => x.id === id) : null;
         const role = d.roles.find(r => r.name === (s?.role ?? roleName));
         if ((id && !s) || !role) return res.writeHead(404).end();
@@ -611,7 +627,7 @@ async function main(argv) {
   });
 }
 
-if (isMain(import.meta.url)) main(process.argv.slice(2));
+if (isMain(import.meta.url)) main(process.argv.slice(2)).catch(e => { console.error(e); process.exit(1); });
 
 export async function selftest(ok) {
   const D = describe;
@@ -748,6 +764,12 @@ export async function selftest(ok) {
     ok('the server never waits for git: nothing yet, then the last answer while a new one is asked',
        first === null && asked === 1 && before === '' && kept === '' && stale === '' && gitAsking.size === 1);
     ok('a settled look sees the new answer', (await settled(st)).includes('x.txt') && gitAsking.size === 0);
+    gitAsking.set('hang', new Promise(() => {}));
+    for (const v of gitMemo.values()) v.at -= GIT_TTL;
+    gitMemo.set('old', { at: Date.now() - GIT_FORGET - 1, v: 'x' });
+    ok('a settled look waits only on its own git answers', (await settled(st)).includes('x.txt'));
+    ok('answers nobody asked for in a long while are dropped', !gitMemo.has('old'));
+    gitAsking.delete('hang');
     gitMemo = null; rmSync(join(repo, 'x.txt'));
     writeFileSync(join(repo, 'agents.json'), JSON.stringify({ main: { dir: '.' }, ui: { dir: '../app-ui', branch: 'u', skills: ['taste'] } }));
     const old = process.env.CLAUDE_HOME, oldL = process.env.OPS_LEDGER;
