@@ -14,7 +14,7 @@ import { readFileSync, existsSync, readdirSync, statSync, openSync, readSync, cl
   mkdirSync, writeFileSync, appendFileSync, rmSync, mkdtempSync } from 'node:fs';
 import { join, dirname, basename, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { loadAgents } from './lib/agents.mjs';
 import { projectSlug, leaf, claudeHome, isMain, hostPath } from './lib/paths.mjs';
@@ -332,19 +332,31 @@ export function teamOf(sess) {
 }
 
 function git(root, ...a) { return gitRaw(root, ...a)?.trim() ?? null; }
-// The server keeps git answers for GIT_TTL. A board runs git a dozen times and each start costs ~75 ms,
-// seconds where antivirus scans every new process; the server is single-threaded, so the chat drawer
-// waited behind it. Git state moves on commits and edits, not every 2 s. Off in tests: they want git fresh.
+// The server never waits for git. A board runs git a dozen times; each start costs ~75 ms, and seconds
+// where antivirus scans every new process — run in line, they held up every request (the chat drawer
+// too), and a round could outlast any cache. So the server answers from the last git result and asks
+// again in the background once it is GIT_TTL old (counted from when the answer came back).
+// Off in tests and one-shot use: there git runs in line and is always fresh.
 const GIT_TTL = 15_000;
-let gitMemo = null;
+const GIT_OPT = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, maxBuffer: 64 << 20 };
+let gitMemo = null;            // key -> { at, v }
+const gitAsking = new Map();   // key -> promise of the answer on its way
 // Untrimmed: porcelain lines start with a status column that may be a space.
 function gitRaw(root, ...a) {
-  const k = [root, ...a].join('\0'), hit = gitMemo?.get(k);
-  if (hit && Date.now() - hit.at < GIT_TTL) return hit.v;
-  let v;
-  try { v = execFileSync('git', ['-C', root, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); }
-  catch { v = null; }
-  gitMemo?.set(k, { at: Date.now(), v });
+  const args = ['-C', root, ...a];
+  if (!gitMemo) { try { return execFileSync('git', args, GIT_OPT); } catch { return null; } }
+  const k = args.join('\0'), hit = gitMemo.get(k);
+  if ((!hit || Date.now() - hit.at >= GIT_TTL) && !gitAsking.has(k)) {
+    gitAsking.set(k, new Promise(done => execFile('git', args, GIT_OPT, (err, out) => {
+      gitMemo.set(k, { at: Date.now(), v: err ? null : out }); gitAsking.delete(k); done();
+    })));
+  }
+  return hit ? hit.v : null;
+}
+/** fn() again once every git answer it asked for has come back — for a fresh view on demand. */
+async function settled(fn) {
+  let v = fn();
+  while (gitAsking.size) { await Promise.all(gitAsking.values()); v = fn(); }
   return v;
 }
 /** Branch, head commit, uncommitted paths, commits ahead of upstream (null = no upstream, not 0). */
@@ -533,15 +545,17 @@ export function hostOk(host, port, extra = null) {
 }
 
 let CACHE = { at: 0, v: null };
-function main(argv) {
+async function main(argv) {
   const flag = (k, d) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : d; };
   const port = Number(flag('port', DEFAULT_PORT));
   if (!Number.isInteger(port) || port < 1 || port > 65535) { console.error('--port needs a number between 1 and 65535'); process.exit(1); }
   const host = flag('host', '127.0.0.1');
-  gitMemo = new Map();
   // This repo, plus any other repo given with --also (one board for several projects; a tab each).
   const top = d => git(d, 'rev-parse', '--show-toplevel') ?? d;
   const roots = [top(process.cwd()), ...argv.flatMap((a, i) => argv[i - 1] === '--also' ? [top(resolve(a))] : [])];
+  gitMemo = new Map();
+  // The first board waits for git once, so the page never opens on blanks.
+  CACHE = { at: Date.now(), v: { projects: await settled(() => roots.map(r => board(r))) } };
   createServer((req, res) => {
     if (!hostOk(req.headers.host, port, LOCAL.has(host) ? null : host)) return res.writeHead(403).end();
     const path = req.url.split('?')[0];
@@ -556,11 +570,15 @@ function main(argv) {
       }
       if (path === '/api/open' && req.method === 'POST') {
         if (!sameOrigin(req.headers.origin, req.headers.host)) return res.writeHead(403).end();
-        const d = board(root), id = q.get('id'), roleName = q.get('role');
+        // The board the page is showing has the sessions and roles; only a window newer than it needs
+        // a fresh one. Whether the window is open right now is read fresh — it is one small folder.
+        const id = q.get('id'), roleName = q.get('role');
+        let d = CACHE.v.projects[roots.indexOf(root)];
+        if (id && !d.sessions.some(x => x.id === id)) d = board(root);
         const s = id ? d.sessions.find(x => x.id === id) : null;
         const role = d.roles.find(r => r.name === (s?.role ?? roleName));
         if ((id && !s) || !role) return res.writeHead(404).end();
-        const live = s ? d.live.find(l => l.id === s.id) ?? null : null;
+        const live = s ? liveSessions().find(l => l.id === s.id) ?? null : null;
         const dir = role.shared ? root : role.dir;
         openWindow({ s, live, role: { ...role, dir } }).then(result => json({ result }), e => res.writeHead(500).end(String(e.message)));
         return;
@@ -572,8 +590,10 @@ function main(argv) {
         return json(chatLog(file, { before: num('before'), from: num('from') }));
       }
       if (path === '/api/changes') {
-        const c = changesOf(root, rolesOf(root), q.get('role') ?? '', q.get('file'));
-        return c ? json(c) : res.writeHead(404).end();
+        // Waits only for git answers never asked before (a file's first diff); git runs off the server's thread.
+        settled(() => changesOf(root, rolesOf(root), q.get('role') ?? '', q.get('file')))
+          .then(c => c ? json(c) : res.writeHead(404).end(), e => res.writeHead(500).end(String(e.message)));
+        return;
       }
       if (path === '/' || path === '/index.html') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -593,7 +613,7 @@ function main(argv) {
 
 if (isMain(import.meta.url)) main(process.argv.slice(2));
 
-export function selftest(ok) {
+export async function selftest(ok) {
   const D = describe;
   ok('text is text', D({ message: { role: 'user', content: 'hi' } }).text === 'hi');
   ok('blank text is nothing', D({ message: { role: 'user', content: '   ' } }) === null);
@@ -718,11 +738,16 @@ export function selftest(ok) {
     const repo = join(t, 'app'); mkdirSync(repo);
     execFileSync('git', ['-C', repo, 'init', '-q', '-b', 'main']);
     gitMemo = new Map();
-    const before = gitRaw(repo, 'status', '--porcelain');
+    const st = () => gitRaw(repo, 'status', '--porcelain');
+    const first = st(), asked = gitAsking.size;
+    const before = await settled(st);
     writeFileSync(join(repo, 'x.txt'), 'x');
-    const kept = gitRaw(repo, 'status', '--porcelain');
+    const kept = st();
     for (const v of gitMemo.values()) v.at -= GIT_TTL;
-    ok('the server keeps git answers for a while, then asks again', kept === before && gitRaw(repo, 'status', '--porcelain').includes('x.txt'));
+    const stale = st();
+    ok('the server never waits for git: nothing yet, then the last answer while a new one is asked',
+       first === null && asked === 1 && before === '' && kept === '' && stale === '' && gitAsking.size === 1);
+    ok('a settled look sees the new answer', (await settled(st)).includes('x.txt') && gitAsking.size === 0);
     gitMemo = null; rmSync(join(repo, 'x.txt'));
     writeFileSync(join(repo, 'agents.json'), JSON.stringify({ main: { dir: '.' }, ui: { dir: '../app-ui', branch: 'u', skills: ['taste'] } }));
     const old = process.env.CLAUDE_HOME, oldL = process.env.OPS_LEDGER;
@@ -790,6 +815,6 @@ export function selftest(ok) {
   } finally { rmSync(t, { recursive: true, force: true }); }
 
   const src = readFileSync(fileURLToPath(import.meta.url), 'utf8');
-  const body = src.slice(0, src.indexOf('export function selftest'));
+  const body = src.slice(0, src.indexOf('export async function selftest'));
   ok('board never writes files outside its selftest', !/\b(writeFileSync|appendFileSync|rmSync|mkdirSync)\(/.test(body));
 }
