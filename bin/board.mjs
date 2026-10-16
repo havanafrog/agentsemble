@@ -84,7 +84,7 @@ export function describe(row) {
   if (tool) {
     const i = tool.input ?? {};
     return { role: m.role, kind: 'tool', tool: tool.name,
-      text: i.description ?? i.command ?? i.file_path ?? i.pattern ?? i.prompt ?? i.query ?? i.url ?? i.action ?? '' };
+      text: tool.name === 'SendMessage' && i.to ? `→ ${i.to}${i.summary ? ': ' + i.summary : ''}` : i.description ?? i.command ?? i.file_path ?? i.pattern ?? i.prompt ?? i.query ?? i.url ?? i.action ?? '' };
   }
   const text = m.content.filter(c => c.type === 'text').map(c => c.text).join(' ').trim();
   if (text) return { role: m.role, kind: 'text', text };
@@ -699,6 +699,7 @@ export async function selftest(ok) {
     ok('five most recent moves, oldest first', S[0].steps.length === STEPS && S[0].steps.at(-1).tool === 'SendMessage'
        && S[0].steps.every((s, i) => i === 0 || s.at >= S[0].steps[i - 1].at));
     ok('sent orders are collected', S[0].sends.length === 1 && S[0].sends[0].to === 'ui');
+    ok('a SendMessage move says who it went to and what about', S[0].steps.at(-1).text === '→ ui: contrast', S[0].steps.at(-1).text);
     ok('name falls back to the first ask', S[0].name === 'do this' && S[0].role === 'main');
     const shs = [{ id: 'a', name: 'review', role: 'main' }, { id: 'b', name: 'main', role: 'main' }, { id: 'c', name: null, role: 'main' }];
     claimShared(shs, ['review']);

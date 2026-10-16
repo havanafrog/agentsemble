@@ -50,6 +50,8 @@
   .ph { margin-left: auto; font-size: 11.5px; color: var(--sub); flex: none; }
   .ph.moving { color: var(--live); font-weight: 650; }
   .ph.busy { color: var(--warn); font-weight: 650; }
+  .ph.waiting { color: var(--calm); font-weight: 650; }
+  .win.stopped { opacity: .62; } .win.stopped:hover, .win.stopped:focus-visible { opacity: 1; }
   .asked { font-size: 12.5px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .asked i { font-style: normal; color: var(--faint); margin-right: 6px; }
   .flow { display: grid; gap: 2px; font-size: 12px; }
@@ -293,6 +295,7 @@
   .open:hover { border-color: var(--calm); }
   .open + .copy { margin-left: 0; }
   .open.openall { margin-left: 0; align-self: center; }
+  .open:disabled { cursor: progress; color: var(--sub); border-color: var(--hair); }
   .clashes { color: var(--live); font-size: 12.5px; margin: 10px 2px 0; }
   .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--page); padding: 9px 14px; border-radius: 10px; font-size: 13px; z-index: 50; max-width: calc(100% - 32px); }
 
@@ -469,7 +472,7 @@ const resumeCmd = s => `cd "${s.cwd ?? ''}" && claude --resume ${s.id}`;
 
 function card(s, now, isMain) {
   const steps = (s.steps ?? []).map(x => `<div><b>${esc(x.tool ?? 'says')}</b>${esc(x.text)}</div>`).join('');
-  return `<button type="button" class="win ${s.phase === 'moving' ? 'moving' : ''} ${isMain ? 'main' : ''}" data-id="${esc(s.id)}">`
+  return `<button type="button" class="win ${s.phase === 'moving' || s.phase === 'stopped' ? s.phase : ''} ${isMain ? 'main' : ''}" data-id="${esc(s.id)}">`
     + `<div class="head">${unread(s) ? '<span class="unread" title="new since you last opened it"></span>' : ''}<span class="nm">${esc(s.name ?? s.id.slice(0, 8))}</span>`
     + (s.role ? `<span class="role ${isMain ? '' : 'sub'}">${esc(s.role)}</span>` : '')
     + `<span class="ph ${esc(s.phase)}">${esc(PHASE[s.phase] ?? '')} · ${esc(ago(s.idleMs))}</span></div>`
@@ -496,7 +499,7 @@ function roleCard(d, r, now) {
   const sends = m.edges.filter(e => e.from === r.name).map(e => `→ ${e.to} ${e.n}`).join(' · ');
   const steps = (s?.steps ?? []).slice(-3).map(x => `<div><b>${esc(x.tool ?? 'says')}</b>${esc(x.text)}</div>`).join('');
   const isMain = r.isMain;
-  return `<div class="win rolecard ${s?.phase === 'moving' ? 'moving' : ''} ${isMain ? 'main' : ''}"${s ? ` data-open="${esc(s.id)}" role="button" tabindex="0" aria-label="Read ${esc(r.name)} conversation"` : ''}>`
+  return `<div class="win rolecard ${s?.phase === 'moving' || s?.phase === 'stopped' ? s.phase : ''} ${isMain ? 'main' : ''}"${s ? ` data-open="${esc(s.id)}" role="button" tabindex="0" aria-label="Read ${esc(r.name)} conversation"` : ''}>`
     + `<div class="head">${s && unread(s) ? '<span class="unread" title="new since you last opened it"></span>' : ''}<span class="nm">${esc(r.name)}</span>`
     + `<span class="meta2">${esc([r.shared ? 'shares main folder' : '', r.autonomy, r.model].filter(Boolean).join(' · '))}</span>`
     + `<span class="ph ${esc(s?.phase ?? '')}">${s ? esc(PHASE[s.phase] ?? '') + ' · ' + esc(ago(s.idleMs)) : 'no window'}</span></div>`
@@ -724,13 +727,18 @@ async function openWindow(id, role) {
   } catch { toast('Board not reachable'); }
 }
 // Every role on the Map, in its order (main first): main's window has to exist before the others
-// can join it as tabs, hence the pause between them.
+// can join it as tabs, hence the pause between them. Locked while it runs — bringing a window forward
+// can take half a minute, and a second click would start a role with no window twice.
 $('openall').onclick = async () => {
-  const btns = [...document.querySelectorAll('#p-map button.open[data-role]')];
-  for (const [i, o] of btns.entries()) {
-    await openWindow(o.dataset.win, o.dataset.role);
-    if (i < btns.length - 1) await new Promise(r => setTimeout(r, 2500));
-  }
+  const b = $('openall'), btns = [...document.querySelectorAll('#p-map button.open[data-role]')];
+  b.disabled = true;
+  try {
+    for (const [i, o] of btns.entries()) {
+      b.textContent = `Opening ${i + 1}/${btns.length}…`;
+      await openWindow(o.dataset.win, o.dataset.role);
+      if (i < btns.length - 1) await new Promise(r => setTimeout(r, 2500));
+    }
+  } finally { b.disabled = false; b.textContent = 'Open all'; }
 };
 
 // Drawer: one session's conversation.
