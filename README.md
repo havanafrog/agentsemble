@@ -71,8 +71,7 @@ board (main heads every tab); `"$title"` names the project tab. One board can wa
 `board.mjs --also ../other-repo` adds a tab for each. The bell top right and the red counts on the
 tabs show which windows wait for you.
 
-Four tabs: **Map** (above — main on top, a card per role: what its window is doing, the last order it got, the areas it owns and what it is changing now), **Sessions** (every session's
-latest moves; click one for its conversation), **Tools** (planned vs installed, per role —
+Three tabs: **Map** (above — main on top, a card per role: what its window is doing, the last order it got, the areas it owns and what it is changing now; older sessions fold below it), **Tools** (planned vs installed, per role —
 `missing` and `+` mark drift), **Ledger** (open claims first, finished ones folded).
 
 Click a role on the Map or a session card: a side drawer opens with its **Conversation** and its

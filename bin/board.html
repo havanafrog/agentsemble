@@ -328,13 +328,11 @@
 
   <div class="tabs" role="tablist" aria-label="Board">
     <button class="tab" role="tab" id="t-map" aria-controls="p-map" aria-selected="true">Map<span class="n" id="n-map"></span></button>
-    <button class="tab" role="tab" id="t-wins" aria-controls="p-wins" aria-selected="false">Sessions<span class="n" id="n-wins"></span></button>
     <button class="tab" role="tab" id="t-tools" aria-controls="p-tools" aria-selected="false">Tools<span class="n" id="n-tools"></span></button>
     <button class="tab" role="tab" id="t-ledger" aria-controls="p-ledger" aria-selected="false">Ledger<span class="n" id="n-ledger"></span></button>
   </div>
 
   <section role="tabpanel" id="p-map" aria-labelledby="t-map"></section>
-  <section role="tabpanel" id="p-wins" aria-labelledby="t-wins" hidden></section>
   <section role="tabpanel" id="p-tools" aria-labelledby="t-tools" hidden></section>
   <section role="tabpanel" id="p-ledger" aria-labelledby="t-ledger" hidden></section>
 </div>
@@ -361,7 +359,7 @@ const ago = ms => ms < 60e3 ? 'just now' : ms < 3600e3 ? Math.round(ms / 60e3) +
 const PHASE = { moving: 'moving', waiting: 'your turn', busy: 'no reply yet', stopped: 'stopped' };
 
 // Tabs — remembered per viewer; the board is local so localStorage is fine.
-const TABS = ['map', 'wins', 'tools', 'ledger'];
+const TABS = ['map', 'tools', 'ledger'];
 function pick(name) {
   for (const t of TABS) {
     const on = t === name;
@@ -525,20 +523,6 @@ function mapHtml(d, now) {
     + (rest.length ? fold('map:rest', '<b>Older or other sessions</b>', rest.length, `<div class="cards" style="padding:8px 0">${rest.map(s => card(s, now)).join('')}</div>`) : '');
 }
 
-function winsHtml(d, now) {
-  const stopped = d.sessions.filter(s => s.phase === 'stopped');
-  const active = d.sessions.filter(s => s.phase !== 'stopped');
-  const others = d.live.filter(w => !w.here);
-  const byProj = new Map();
-  for (const w of others) byProj.set(w.project ?? '?', [...(byProj.get(w.project ?? '?') ?? []), w]);
-  const lv = w => `<div class="row"><span class="what">${esc(w.name ?? w.id.slice(0, 8))}</span><span class="when">${esc(ago(now - w.updatedAt))}</span></div>`;
-  return (active.length ? `<div class="cards">${active.map(s => card(s, now, s.role === 'main')).join('')}</div>` : '<div class="empty">No active sessions.</div>')
-    + `<div class="card" style="margin-top:14px">`
-    + (stopped.length ? fold('wins:stopped', '<b>Stopped</b> quiet over 10 minutes', stopped.length, `<div class="cards" style="padding:8px">${stopped.map(s => card(s, now)).join('')}</div>`) : '')
-    + [...byProj].map(([p, ws]) => fold('live:' + p, `<b>${esc(p)}</b> open elsewhere`, ws.length, ws.map(lv).join(''))).join('')
-    + '</div>';
-}
-
 function toolsHtml(d) {
   const item = (cls, t) => `<span class="i ${cls} ${esc(t.st)}" title="${esc({ ok: 'as planned', miss: 'planned, not installed', extra: 'installed, not planned', plan: 'not set up yet' }[t.st] ?? '')}">${esc(t.name)}</span>`;
   return `<div class="card">` + d.roles.map(r => {
@@ -681,12 +665,10 @@ function render() {
     + (off ? ` · <span class="warn">${off} tool mismatch</span>` : ''));
   $('repo').textContent = [d.repo.branch, d.repo.head?.hash, d.repo.dirty.length ? d.repo.dirty.length + ' uncommitted' : '',
     d.repo.ahead ? d.repo.ahead + ' ahead' : ''].filter(Boolean).join(' · ');
-  $('n-wins').textContent = d.sessions.length || '';
   $('n-tools').textContent = off || '';
   $('n-ledger').textContent = d.open.length || '';
   paint('p-map', mapHtml(d, now));
   $('n-map').textContent = d.map?.clashes.length ? '⚠ ' + d.map.clashes.length : '';
-  paint('p-wins', winsHtml(d, now));
   paint('p-tools', toolsHtml(d));
   paint('p-ledger', ledgerHtml(d.groups, now));
 }
