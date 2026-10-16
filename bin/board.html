@@ -4,23 +4,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>agentsemble</title>
 <style>
+  /* Cyberpunk: always dark — neon only reads on black. Cyan is calm (focus, selection), magenta is live. */
   :root {
-    --page: #f4f5f8; --surface: #fbfcfd;
-    --text: #191f28; --sub: #4e5968; --faint: #6b7684;
-    --hair: #e5e8eb; --ring: inset 0 0 0 1px rgba(2,32,71,.06);
-    --live: #e0303e; --onlive: #fff; --calm: #1b64da; --warn: #b26b00; --good: #0f8a4c; --me: #0a66ea;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --page: #17171c; --surface: #1f2027;
-      --text: #e9ecef; --sub: #b6bec7; --faint: #8d96a3;
-      --hair: #2b2d36; --ring: inset 0 0 0 1px rgba(255,255,255,.07);
-      --live: #ff6b76; --onlive: #17171c; --calm: #6ea8ff; --warn: #f5b04a; --good: #3fd08a;
-    }
+    color-scheme: dark;
+    --page: #07070d; --surface: #0f0f1a;
+    --text: #e6f1ff; --sub: #a3aed0; --faint: #7f8aad;
+    --hair: #23233d; --ring: inset 0 0 0 1px rgb(0 229 255 / .16);
+    --live: #ff2a6d; --onlive: #07070d; --calm: #00e5ff; --warn: #ffd23f; --good: #39ff88; --me: #3a1450;
+    --glow-calm: 0 0 12px rgb(0 229 255 / .35); --glow-live: 0 0 14px rgb(255 42 109 / .45);
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--page); color: var(--text);
-    font: 14px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    font: 13.5px/1.55 "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace; -webkit-font-smoothing: antialiased; }
   .wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 48px; }
   button { font: inherit; }
 
@@ -291,7 +286,8 @@
   .areas span { font-size: 11.5px; color: var(--sub); background: var(--page); border-radius: 6px; padding: 2px 7px; font-variant-numeric: tabular-nums; }
   .areas b { font-weight: 650; margin-left: 4px; }
   .areas .work b { color: var(--calm); } .areas .stray { box-shadow: inset 0 0 0 1.5px var(--warn); } .areas .stray b { color: var(--warn); }
-  .rolecard .meta2 { font-size: 11.5px; color: var(--faint); flex: none; }
+  .rolecard .nm { flex: none; }
+  .rolecard .meta2 { font-size: 11.5px; color: var(--faint); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rolecard .none { font-size: 12.5px; color: var(--faint); }
   .open { appearance: none; border: 1px solid var(--hair); background: var(--surface); color: var(--text); border-radius: 8px;
     padding: 4px 12px; min-height: 28px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; margin-left: auto; }
@@ -300,6 +296,21 @@
   .open.openall { margin-left: 0; align-self: center; }
   .clashes { color: var(--live); font-size: 12.5px; margin: 10px 2px 0; }
   .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--page); padding: 9px 14px; border-radius: 10px; font-size: 13px; z-index: 50; max-width: calc(100% - 32px); }
+
+  /* Neon: light on the edges that already mean something — selection, focus, a window moving. */
+  body { background: radial-gradient(1200px 600px at 80% -10%, rgb(255 42 109 / .08), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgb(0 229 255 / .07), transparent 60%), var(--page) fixed; }
+  h1 { color: var(--calm); text-transform: uppercase; letter-spacing: .14em; text-shadow: var(--glow-calm); }
+  .tab { text-transform: uppercase; letter-spacing: .08em; font-size: 12px; }
+  .tab[aria-selected="true"] { color: var(--calm); text-shadow: var(--glow-calm); }
+  .win:hover, .win:focus-visible { box-shadow: inset 0 0 0 1.5px var(--calm), var(--glow-calm); }
+  .win.moving { box-shadow: inset 0 0 0 1.5px var(--live), var(--glow-live); }
+  .ph.moving { text-shadow: var(--glow-live); }
+  .open { text-transform: uppercase; letter-spacing: .06em; border-color: rgb(0 229 255 / .4); color: var(--calm); }
+  .open:hover { box-shadow: var(--glow-calm); }
+  .badge, .pn { box-shadow: var(--glow-live); }
+  .win.main { box-shadow: inset 0 0 0 2px var(--calm), var(--glow-calm); }
+  .bub.me { box-shadow: inset 0 0 0 1px rgb(255 42 109 / .5); }
 </style>
 
 <div class="shell">
