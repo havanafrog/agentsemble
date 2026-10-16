@@ -594,10 +594,14 @@ async function main(argv) {
         const s = id ? d.sessions.find(x => x.id === id) : null;
         const role = d.roles.find(r => r.name === (s?.role ?? roleName));
         if ((id && !s) || !role) return res.writeHead(404).end();
-        const live = s ? liveSessions().find(l => l.id === s.id) ?? null : null;
+        const all = liveSessions();
+        const live = s ? all.find(l => l.id === s.id) ?? null : null;
         const dir = role.shared ? root : role.dir;
-        // One Windows Terminal window per project, so a role's tab joins main's.
-        openWindow({ s, live, role: { ...role, dir, win: `agentsemble-p${roots.indexOf(root)}` } }).then(result => json({ result }), e => res.writeHead(500).end(String(e.message)));
+        // A sub's tab goes beside main's window when main is open (named), even one the board didn't
+        // open; otherwise into one Windows Terminal window per project.
+        const main = role.isMain ? null : d.roles.find(r => r.isMain);
+        const mainLive = main && d.sessions.filter(x => x.role === main.name).map(x => all.find(l => l.id === x.id && l.named)).find(Boolean);
+        openWindow({ s, live, role: { ...role, dir, win: `agentsemble-p${roots.indexOf(root)}`, near: mainLive?.name ?? null } }).then(result => json({ result }), e => res.writeHead(500).end(String(e.message)));
         return;
       }
       if (path === '/api/log') {

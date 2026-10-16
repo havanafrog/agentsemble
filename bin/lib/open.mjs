@@ -111,14 +111,17 @@ export function launch(dir, cmd, platform = process.platform, run = spawn, win =
  * windows on one session break both. A live window without a name can't be found: say so.
  * @param s     the session (id, role) or null to start the role fresh
  * @param live  the registry entry if its window is open
- * @param role  { dir, model, shared, win } — win: the Windows Terminal window its tab joins
+ * @param role  { dir, model, shared, win, near } — win: the Windows Terminal window its tab joins;
+ *              near: the name of a live window (main's) to join instead — brought forward first, then
+ *              `wt -w 0` (the most recent window) adds the tab there. Not found: `win` as before.
  */
 export async function openWindow({ s, live, role }, platform = process.platform, run = spawn, find = focus) {
   if (live) {
     const r = await find(live.named ? live.name : null, platform);
     return r === 'noname' ? 'unnamed' : r;
   }
-  return launch(role.dir, command({ id: s?.id ?? null, model: s ? null : role.model ?? null, name: s ? null : role.name ?? null }), platform, run, role.win ?? null);
+  const win = role.near && platform === 'win32' && await find(role.near, platform) === 'ok' ? '0' : role.win ?? null;
+  return launch(role.dir, command({ id: s?.id ?? null, model: s ? null : role.model ?? null, name: s ? null : role.name ?? null }), platform, run, win);
 }
 
 export async function selftest(ok) {
@@ -138,6 +141,10 @@ export async function selftest(ok) {
   ok('a live window with no name says so', await openWindow({ s: { id: 'x' }, live: { named: false, name: 'x' }, role: { dir: '.' } }, 'win32', run, async n => n ? 'ok' : 'noname') === 'unnamed');
   ok('with a window name it opens as a tab in that Windows Terminal window', await openWindow({ s: null, live: null, role: { dir: 'D:/w', name: 'ui', win: 'agentsemble-p1' } }, 'win32', run) === 'opened'
      && calls[2][0] === 'wt' && calls[2][1].join(' ') === '-w agentsemble-p1 new-tab -d D:/w cmd /k claude --name ui');
+  ok('main open: the tab joins its window (brought forward, then the most recent window)', await openWindow({ s: null, live: null, role: { dir: 'D:/w', name: 'ui', win: 'agentsemble-p1', near: 'main' } }, 'win32', run, async n => n === 'main' ? 'ok' : 'notfound') === 'opened'
+     && calls[3][1].slice(0, 2).join(' ') === '-w 0');
+  ok('main not found: the project window as before', await openWindow({ s: null, live: null, role: { dir: 'D:/w', name: 'ui', win: 'agentsemble-p1', near: 'main' } }, 'win32', run, async () => 'notfound') === 'opened'
+     && calls[4][1].slice(0, 2).join(' ') === '-w agentsemble-p1');
   const noWt = (...a) => { calls.push(a); if (a[0] === 'wt') throw new Error('ENOENT'); return { unref() {} }; };
   ok('no Windows Terminal: a plain window instead', launch('D:/w', 'claude', 'win32', noWt, 'agentsemble-p0') === 'opened' && calls.at(-1)[0] === 'cmd');
   calls.length = 2;
