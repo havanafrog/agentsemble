@@ -297,6 +297,7 @@
     padding: 4px 12px; min-height: 28px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; margin-left: auto; }
   .open:hover { border-color: var(--calm); }
   .open + .copy { margin-left: 0; }
+  .open.openall { margin-left: 0; align-self: center; }
   .clashes { color: var(--live); font-size: 12.5px; margin: 10px 2px 0; }
   .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--page); padding: 9px 14px; border-radius: 10px; font-size: 13px; z-index: 50; max-width: calc(100% - 32px); }
 </style>
@@ -313,6 +314,7 @@
     <h1>agentsemble</h1>
     <span class="meta" id="tally"></span>
     <span class="meta repo" id="repo"></span>
+    <button type="button" class="open openall" id="openall" title="Open every role of this view, main first, so the others join its window as tabs">Open all</button>
     <div class="bellw">
       <button type="button" class="bell" id="bell" data-alerts="off" aria-haspopup="true" aria-expanded="false" aria-controls="bellp" aria-label="Alerts">
         <svg class="ico off" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
@@ -417,6 +419,7 @@ $('bell').onclick = e => {
   e.stopPropagation();
   if (!$('bellp').hidden) return closeBell();
   bellPanel(); $('bellp').hidden = false; $('bell').setAttribute('aria-expanded', 'true');
+  ackAll();
 };
 $('bellp').addEventListener('click', async e => {
   if (e.target.id === 'allow') { e.stopPropagation(); await Notification.requestPermission(); bellPanel(); bellLook(); }
@@ -427,10 +430,24 @@ function ping(s) {
   el.innerHTML = `<b>${esc(who(s))}</b> finished — your turn<span>${esc(cut(s.last?.text ?? '', 120))}</span>`;
   $('pings').append(el); setTimeout(() => el.remove(), 12000);
 }
+// The count is what you haven't looked at: opening the bell clears it, and a window counts again only
+// when it finishes something new. The list still shows every window waiting.
+let ACK = {};
+try { ACK = JSON.parse(localStorage.getItem('as-ack') ?? '{}'); } catch { /* private mode */ }
+const unacked = s => lastAt(s) > (ACK[s.id] ?? 0);
+function showCount() {
+  const n = NOWWAIT.filter(unacked).length;
+  document.title = n ? `(${n}) agentsemble` : 'agentsemble';
+  $('badge').hidden = !n; $('badge').textContent = n;
+}
+function ackAll() {
+  for (const s of NOWWAIT) ACK[s.id] = lastAt(s);
+  try { localStorage.setItem('as-ack', JSON.stringify(ACK)); } catch { /* */ }
+  showCount(); render();
+}
 function watchWaiting(d) {
   NOWWAIT = d.sessions.filter(s => s.phase === 'waiting');
-  document.title = NOWWAIT.length ? `(${NOWWAIT.length}) agentsemble` : 'agentsemble';
-  $('badge').hidden = !NOWWAIT.length; $('badge').textContent = NOWWAIT.length;
+  showCount();
   bellLook();
   if (WAITING) for (const s of NOWWAIT) {
     if (WAITING.has(s.id)) continue;
@@ -645,7 +662,7 @@ function render() {
   document.body.classList.toggle('noside', tasks.length < 2);
   let total = 0;
   const item = x => {
-    const n = viewOf(ALL, x).sessions.filter(s => s.phase === 'waiting' && !(x.task && s.role === 'main')).length;
+    const n = viewOf(ALL, x).sessions.filter(s => s.phase === 'waiting' && !(x.task && s.role === 'main') && unacked(s)).length;
     total += n;
     return `<button type="button" class="sitem${x.task ? '' : ' proj'}" data-task="${esc(x.key)}" title="${esc(x.label)}"${x.key === t.key ? ' aria-current="page"' : ''}>`
       + `<span class="ini" aria-hidden="true">${esc([...x.label][0]?.toUpperCase() ?? '?')}</span><span class="lb">${esc(x.label)}</span>`
@@ -727,6 +744,15 @@ async function openWindow(id, role) {
     toast(r.ok ? SAY[(await r.json()).result] ?? 'Done' : 'Could not open it (' + r.status + ')');
   } catch { toast('Board not reachable'); }
 }
+// Every role on the Map, in its order (main first): main's window has to exist before the others
+// can join it as tabs, hence the pause between them.
+$('openall').onclick = async () => {
+  const btns = [...document.querySelectorAll('#p-map button.open[data-role]')];
+  for (const [i, o] of btns.entries()) {
+    await openWindow(o.dataset.win, o.dataset.role);
+    if (i < btns.length - 1) await new Promise(r => setTimeout(r, 2500));
+  }
+};
 
 // Drawer: one session's conversation.
 let OPEN_ID = null, START = 0, OPENER = null;

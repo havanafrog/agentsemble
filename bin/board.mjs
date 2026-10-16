@@ -596,7 +596,8 @@ async function main(argv) {
         if ((id && !s) || !role) return res.writeHead(404).end();
         const live = s ? liveSessions().find(l => l.id === s.id) ?? null : null;
         const dir = role.shared ? root : role.dir;
-        openWindow({ s, live, role: { ...role, dir } }).then(result => json({ result }), e => res.writeHead(500).end(String(e.message)));
+        // One Windows Terminal window per project, so a role's tab joins main's.
+        openWindow({ s, live, role: { ...role, dir, win: `agentsemble-p${roots.indexOf(root)}` } }).then(result => json({ result }), e => res.writeHead(500).end(String(e.message)));
         return;
       }
       if (path === '/api/log') {
