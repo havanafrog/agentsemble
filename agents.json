@@ -1,0 +1,17 @@
+{
+  "$schema": "./agents.schema.json",
+  "$title": "agentsemble",
+  "main": {
+    "dir": ".",
+    "what": "builds agentsemble — board, setup, ledger, the skill — and ships each version",
+    "not": "ship a change review has not looked at",
+    "owns": ["bin/", "skills/", "test/", "docs/", ".claude-plugin/", "agents.schema.json", "package.json", "README.md", "README.ko.md"]
+  },
+  "review": {
+    "shared": true,
+    "what": "reviews main's unpushed commits (git log origin/main..HEAD): correctness first, then Windows (paths with Korean or spaces, PowerShell, Windows Terminal), the board's guards (hostOk, sameOrigin, ids and names kept out of command strings), and whether node test/run.mjs and each file's selftest still cover the change; one line per finding to main, a claim's verdict in the ledger",
+    "not": "edit files, commit or push — it reports, main fixes",
+    "model": "opus",
+    "autonomy": "ask"
+  }
+}
