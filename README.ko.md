@@ -41,12 +41,16 @@ agentsemble 은 Claude Code 플러그인입니다. 저장소에서 `/agentsemble
 /agentsemble
 ```
 
+터미널에서 쓰려면 한 번만 `node "<플러그인 폴더>/bin/team.mjs" --install`. 그다음 저장소 폴더에서
+`agentsemble` 을 치면 그 창이 main 이 되고(`claude --name main`) `/agentsemble` 을 시작합니다.
+
 1. Claude 가 저장소(README, 폴더, 빌드·테스트 명령, 최근 커밋, 설치된 플러그인·스킬)를 읽고
    몇 줄로 요약합니다. 틀리면 고쳐 주세요.
 2. 팀 표를 제안합니다 — 역할마다 할 일, 건드리지 않을 것, 맡는 파일, 작업칸과 브랜치,
    **이미 설치된** 스킬·플러그인 중 무엇을 걸지. **여기서 멈추고 승인을 기다립니다.**
 3. 승인하면 `agents.json` 을 쓰고, 작업칸을 만들고, 역할마다 스킬과 플러그인 켜고 끄기를 겁니다.
-4. 서브 역할마다 창을 엽니다 (`cd ../<저장소>-team/<역할> && claude` 뒤 `/rename <역할>`).
+4. Windows Terminal 이면 서브마다 main 옆 탭으로 열립니다(`team.mjs open`, 이름은 역할 이름).
+   그 밖에는 직접 엽니다: `cd ../<저장소>-team/<역할> && claude --name <역할>`.
 5. 판을 띄웁니다:
 
 ```

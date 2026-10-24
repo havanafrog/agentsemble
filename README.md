@@ -41,6 +41,9 @@ checks results and merges; a UI session; a model-training session.
 /agentsemble
 ```
 
+Or from a terminal, once: `node "<plugin dir>/bin/team.mjs" --install`. Then type `agentsemble` in a
+repo folder — that window becomes main (`claude --name main`) and runs `/agentsemble`.
+
 1. Claude reads the repo (README, tree, build/test commands, recent commits, your installed
    plugins and skills) and summarizes it in a few lines. Correct it if needed.
 2. It proposes a team table — each role's job, what it must not touch, files it owns, its worktree
@@ -48,8 +51,8 @@ checks results and merges; a UI session; a model-training session.
    your approval.**
 3. On yes it writes `agents.json`, creates the worktrees, and gives each one its skills and plugin
    switches.
-4. You open one Claude Code window per sub role (`cd ../<repo>-team/<role> && claude`, then
-   `/rename <role>`).
+4. On Windows Terminal each sub opens as a tab beside main (`team.mjs open`), named after its role.
+   Elsewhere you open them: `cd ../<repo>-team/<role> && claude --name <role>`.
 5. Start the board:
 
 ```

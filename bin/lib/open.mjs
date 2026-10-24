@@ -95,16 +95,24 @@ export function command({ id = null, model = null, name = null } = {}) {
 export function launch(dir, cmd, platform = process.platform, run = spawn, win = null) {
   if (!cmd) return 'bad';
   if (platform !== 'win32') return 'unsupported';
-  if (win) {
-    try { run('wt', ['-w', win, 'new-tab', '-d', dir, 'cmd', '/k', cmd], { detached: true, stdio: 'ignore' }).unref(); return 'opened'; }
-    catch { /* no Windows Terminal: fall back to a plain window */ }
-  }
+  // The new window is its own session: started from inside one (the board in a Claude window, or
+  // `agentsemble open` from main), it would inherit that session's variables and run as its child —
+  // transcript off, never listed, so the board and SendMessage can't see it.
+  const env = cleanEnv(process.env);
+  // start's first quoted argument is the window title; leave it empty so the path isn't taken for one.
+  const plain = () => run('cmd', ['/c', 'start', '', 'cmd', '/k', cmd], { cwd: dir, env, detached: true, stdio: 'ignore' }).unref();
   try {
-    // start's first quoted argument is the window title; leave it empty so the path isn't taken for one.
-    run('cmd', ['/c', 'start', '', 'cmd', '/k', cmd], { cwd: dir, detached: true, stdio: 'ignore' }).unref();
+    if (!win) { plain(); return 'opened'; }
+    // A missing wt shows up as an 'error' event, not a throw: then a plain window instead.
+    const c = run('wt', ['-w', win, 'new-tab', '-d', dir, 'cmd', '/k', cmd], { env, detached: true, stdio: 'ignore' });
+    c.on?.('error', () => { try { plain(); } catch { /* nothing more to try */ } });
+    c.unref();
     return 'opened';
   } catch { return 'failed'; }
 }
+
+/** The environment minus the variables that make a process part of the running Claude Code session. */
+export const cleanEnv = env => Object.fromEntries(Object.entries(env).filter(([k]) => !/^CLAUDE_CODE_|^CLAUDECODE$|^CLAUDE_PID$/.test(k)));
 
 /**
  * One click from the board. A live window is brought forward; never reopen a live session — two
@@ -145,8 +153,16 @@ export async function selftest(ok) {
      && calls[3][1].slice(0, 2).join(' ') === '-w 0');
   ok('main not found: the project window as before', await openWindow({ s: null, live: null, role: { dir: 'D:/w', name: 'ui', win: 'agentsemble-p1', near: 'main' } }, 'win32', run, async () => 'notfound') === 'opened'
      && calls[4][1].slice(0, 2).join(' ') === '-w agentsemble-p1');
-  const noWt = (...a) => { calls.push(a); if (a[0] === 'wt') throw new Error('ENOENT'); return { unref() {} }; };
-  ok('no Windows Terminal: a plain window instead', launch('D:/w', 'claude', 'win32', noWt, 'agentsemble-p0') === 'opened' && calls.at(-1)[0] === 'cmd');
+  // A missing program: spawn returns, then emits 'error' — as node does.
+  const noWt = (...a) => { calls.push(a); const h = {}; if (a[0] === 'wt') queueMicrotask(() => h.error?.(new Error('ENOENT'))); return { on(e, f) { h[e] = f; }, unref() {} }; };
+  ok('no Windows Terminal: a plain window instead', launch('D:/w', 'claude', 'win32', noWt, 'agentsemble-p0') === 'opened'
+     && await new Promise(r => setTimeout(r)) === undefined && calls.at(-1)[0] === 'cmd');
+  const was = { ...process.env };
+  Object.assign(process.env, { CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', CLAUDE_PID: '9', CLAUDE_HOME_KEEP: 'x' });
+  launch('D:/w', 'claude', 'win32', run, 'agentsemble-p0');
+  const env = calls.at(-1)[2].env;
+  for (const k of ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_PID', 'CLAUDE_HOME_KEEP']) if (!(k in was)) delete process.env[k];
+  ok('a new window does not inherit the Claude session it was opened from', !('CLAUDECODE' in env) && !('CLAUDE_CODE_CHILD_SESSION' in env) && !('CLAUDE_PID' in env) && env.CLAUDE_HOME_KEEP === 'x');
   calls.length = 2;
   ok('not Windows: nothing is launched', await openWindow({ s: null, live: null, role: { dir: '.' } }, 'linux', run) === 'unsupported' && calls.length === 2);
 }

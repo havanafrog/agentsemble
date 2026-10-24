@@ -133,14 +133,28 @@ Then run `status.mjs` and show that every role says `ok`.
 
 ## 4. Open the windows
 
-The human opens them; give one copyable pair per sub role:
+The name matters: main addresses subs by it with `SendMessage`, and the board finds windows by it.
+
+**This window is main.** If it was started with the `agentsemble` command it already has main's
+name. Otherwise ask the human to type `/rename <main role>` here (you cannot run it yourself).
+
+**Windows:** open every sub as a tab beside this window — run, from this session:
 
 ```
-cd "<dir>" && claude
-/rename <role>
+node "${CLAUDE_PLUGIN_ROOT}/bin/team.mjs" open
 ```
 
-The name matters: main addresses subs by it with `SendMessage`.
+Each tab starts `claude --name <role>` (with its model) in the role's folder. A first-time folder
+asks the human to trust it in that tab. A line ending in "run by hand" means no tab opened.
+
+**Elsewhere** (or a "run by hand" line), the human opens them; give one copyable line per sub role:
+
+```
+cd "<dir>" && claude --name <role>
+```
+
+Mention once that `node "${CLAUDE_PLUGIN_ROOT}/bin/team.mjs" --install` puts an `agentsemble`
+command on PATH: typed in a repo folder's terminal, that window becomes main and runs this skill.
 
 ## 5. How the team works
 
