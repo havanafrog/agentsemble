@@ -40,7 +40,8 @@ await import(pathToFileURL(join(base, newest, 'bin', 'team.mjs')).href);
 
 async function main(argv) {
   if (argv[0] === '--install') {
-    const dir = execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['prefix', '-g'], { encoding: 'utf8', shell: process.platform === 'win32' }).trim();
+    // npm is a .cmd on Windows: run it through cmd rather than with shell: true (no argument escaping there).
+    const dir = (process.platform === 'win32' ? execFileSync('cmd', ['/c', 'npm', 'prefix', '-g'], { encoding: 'utf8' }) : execFileSync('npm', ['prefix', '-g'], { encoding: 'utf8' })).trim();
     const bin = process.platform === 'win32' ? dir : join(dir, 'bin');
     writeFileSync(join(bin, 'agentsemble.mjs'), SHIM);
     if (process.platform === 'win32') writeFileSync(join(bin, 'agentsemble.cmd'), '@node "%~dp0agentsemble.mjs" %*\r\n');
@@ -61,8 +62,9 @@ async function main(argv) {
   }
   if (argv.length) { console.error('usage: agentsemble [open | --install]'); process.exit(1); }
   // This window becomes main: claude starts in it, named so the board and SendMessage find it.
-  const name = mainName(roles);
-  const c = spawn('claude', ['--name', name, '/agentsemble'], { stdio: 'inherit', shell: process.platform === 'win32' });
+  // command() drops a name with odd characters, so nothing unchecked reaches cmd.
+  const cmd = command({ name: mainName(roles) }) + ' /agentsemble';
+  const c = process.platform === 'win32' ? spawn('cmd', ['/c', cmd], { stdio: 'inherit' }) : spawn('sh', ['-c', cmd], { stdio: 'inherit' });
   c.on('exit', code => process.exit(code ?? 0));
 }
 
