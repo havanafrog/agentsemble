@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="pixel">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>agentsemble</title>
@@ -342,7 +342,7 @@
 
   .win.main { box-shadow: inset 0 0 0 1.5px var(--calm); }
 
-  /* Pixel skin (the ▦ button, remembered per viewer): the team as a party screen from a pastel handheld
+  /* The look: the team as a party screen from a pastel handheld
      game — cream paper, ink window frames and a clay accent. main is the leader in the deep accent, the
      chosen task gets the blinking ▶ menu cursor. Red = live/acting, orange = busy, green = done. */
   .pixel {
@@ -384,10 +384,10 @@
   .pixel .tab[aria-selected="true"] { color: var(--surface); background: var(--frame); border-color: var(--frame); }
   .pixel .tab[aria-selected="true"] .n { color: #e3ded1; }
 
-  .pixel .open, .pixel .copy, .pixel .more, .pixel .sopen, .pixel .bell, .pixel .skin {
+  .pixel .open, .pixel .copy, .pixel .more, .pixel .sopen, .pixel .bell {
     border: 2px solid var(--frame); background: var(--surface); color: var(--text); box-shadow: 2px 2px 0 #cbc5b5; }
-  .pixel .open:hover, .pixel .copy:hover, .pixel .bell:hover, .pixel .skin:hover { border-color: var(--calm); color: var(--calm); }
-  .pixel .open:active, .pixel .copy:active, .pixel .more:active, .pixel .bell:active, .pixel .skin:active {
+  .pixel .open:hover, .pixel .copy:hover, .pixel .bell:hover { border-color: var(--calm); color: var(--calm); }
+  .pixel .open:active, .pixel .copy:active, .pixel .more:active, .pixel .bell:active {
     transform: translate(2px, 2px); box-shadow: none; }
   .pixel .badge, .pixel .pn { box-shadow: 0 0 0 2px var(--surface); }
 
@@ -419,9 +419,6 @@
   .pixel .ping::before { width: 6px; }
   .pixel :focus-visible { outline: 2px solid var(--calm) !important; outline-offset: 2px; }
 
-  .skin { appearance: none; border: 1px solid var(--hair); background: var(--surface); color: var(--sub); width: 40px; height: 40px;
-    border-radius: 10px; display: grid; place-items: center; cursor: pointer; align-self: center; font-size: 16px; }
-  .skin:hover { color: var(--text); border-color: var(--calm); }
   @media (prefers-reduced-motion: no-preference) {
     .pixel .sitem[aria-current="page"]::before { animation: blink 1s steps(1) infinite; }
     @keyframes blink { 50% { opacity: 0; } }
@@ -443,7 +440,6 @@
     <span class="meta" id="tally"></span>
     <span class="meta repo" id="repo"></span>
     <button type="button" class="open openall" id="openall" title="Open every role of this view, main first, so the others join its window as tabs">Open all</button>
-    <button type="button" class="skin" id="skin" aria-pressed="false" title="Pixel look on/off">▦</button>
     <div class="bellw">
       <button type="button" class="bell" id="bell" data-alerts="off" aria-haspopup="true" aria-expanded="false" aria-controls="bellp" aria-label="Alerts">
         <svg class="ico off" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
@@ -481,16 +477,6 @@
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
-// Pixel look: off unless this viewer turned it on.
-let PIXEL = false;
-try { PIXEL = localStorage.getItem('as-skin') === 'pixel'; } catch { /* */ }
-function skin() {
-  document.documentElement.classList.toggle('pixel', PIXEL);
-  $('skin').setAttribute('aria-pressed', String(PIXEL));
-  $('skin').setAttribute('aria-label', PIXEL ? 'Pixel look: on' : 'Pixel look: off');
-}
-$('skin').onclick = () => { PIXEL = !PIXEL; try { localStorage.setItem('as-skin', PIXEL ? 'pixel' : 'plain'); } catch { /* */ } skin(); };
-skin();
 const esc = s => String(s ?? '').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
 const cut = (t, n) => { t = String(t ?? ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 const ago = ms => ms < 60e3 ? 'just now' : ms < 3600e3 ? Math.round(ms / 60e3) + 'm ago'
