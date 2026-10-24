@@ -3,6 +3,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>agentsemble</title>
+<!-- Galmuri: Korean + Latin pixel face for the pixel look. Offline, the look falls back to the system monospace. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/galmuri.css">
 <style>
   /* Dark, editor-like: muted greys, colour only where it means something (blue focus, red live). */
   :root {
@@ -54,6 +56,8 @@
   .win.stopped { opacity: .62; } .win.stopped:hover, .win.stopped:focus-visible { opacity: 1; }
   .asked { font-size: 12.5px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .asked i { font-style: normal; color: var(--faint); margin-right: 6px; }
+  .asked.sug { color: var(--text); }
+  .asked.sug .copy { margin-left: 4px; }
   .flow { display: grid; gap: 2px; font-size: 12px; }
   .flow div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sub); }
   .flow b { font-weight: 650; color: var(--text); margin-right: 6px; }
@@ -167,6 +171,43 @@
     background: var(--page); color: var(--text); box-shadow: var(--ring); }
   .sitem.proj .ini { background: var(--text); color: var(--surface); box-shadow: none; }
   .sitem[aria-current="page"] .ini { background: var(--calm); color: var(--page); box-shadow: none; }
+  /* Drag to reorder (projects among projects, tasks within their project); Alt+↑/↓ does the same by key. */
+  .sitem[draggable="true"] { cursor: grab; }
+  /* The viewer's own sidebar edits (this browser only): name, icon, fold, hide — from ⋯, right-click, double-click or F2. */
+  .srow { position: relative; display: flex; align-items: center; }
+  .srow > .sitem { flex: 1; min-width: 0; }
+  .srow:hover > .sitem, .srow:focus-within > .sitem { padding-right: 34px; }
+  .sbtn { appearance: none; border: 0; background: none; color: var(--faint); width: 26px; height: 28px; padding: 0; border-radius: 8px;
+    flex: none; display: grid; place-items: center; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; }
+  .sbtn:hover { background: var(--page); color: var(--text); }
+  .sbtn:focus-visible { outline: 2px solid var(--calm); outline-offset: -2px; }
+  .smore { position: absolute; right: 4px; opacity: 0; }
+  .srow:hover .smore, .srow:focus-within .smore, .smore[aria-expanded="true"] { opacity: 1; }
+  .scaret, .scaret-sp { width: 20px; margin-right: -4px; flex: none; }
+  .scaret svg { display: block; transition: transform .15s; }
+  .scaret[aria-expanded="false"] svg { transform: rotate(-90deg); }
+  .sgrp > .stasks { margin-left: 42px; }
+  .side.folded .sbtn, .side.folded .scaret-sp, .side.folded .shid { display: none; }
+  .ini.emo, .sitem.proj .ini.emo, .sitem[aria-current="page"] .ini.emo { background: none; box-shadow: none; font-size: 17px; }
+  .sren { position: absolute; left: 60px; right: 6px; top: 50%; transform: translateY(-50%); z-index: 2; font: inherit; font-size: 13px;
+    font-weight: 600; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--calm); background: var(--surface); color: var(--text); }
+  .stasks .sren { left: 44px; }
+  .smenu { position: fixed; z-index: 60; min-width: 196px; padding: 6px; display: grid; gap: 2px; border-radius: 12px;
+    background: var(--surface); box-shadow: 0 10px 34px rgb(0 0 0 / .22), var(--ring); }
+  .smenu[hidden] { display: none; }
+  .smenu > button { appearance: none; border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 8px;
+    font: inherit; font-size: 13px; color: var(--text); cursor: pointer; }
+  .smenu button:hover, .smenu button:focus-visible { background: var(--page); outline: none; }
+  .semo { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; padding: 6px 2px 2px; margin-top: 2px; border-top: 1px solid var(--hair); }
+  .semo button { appearance: none; border: 0; background: none; border-radius: 8px; padding: 4px 0; font-size: 17px; cursor: pointer; }
+  .shid { margin-top: 4px; }
+  .shid summary { cursor: pointer; padding: 6px 8px; font-size: 11.5px; font-weight: 700; color: var(--faint); letter-spacing: .04em; }
+  .shid .srow { gap: 8px; padding: 2px 8px; color: var(--sub); font-size: 13px; }
+  .shid .lb { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shid .sbtn { width: auto; padding: 0 8px; font-size: 12px; font-weight: 600; }
+  .sitem.dragging { opacity: .4; }
+  .sitem.drop-before { box-shadow: inset 0 2px 0 var(--calm); }
+  .sitem.drop-after { box-shadow: inset 0 -2px 0 var(--calm); }
   .sitem .lb { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pn { background: var(--live); color: var(--onlive); border-radius: 9px; min-width: 18px; padding: 0 5px; font-size: 11px; font-weight: 700;
     line-height: 18px; text-align: center; flex: none; box-shadow: 0 0 0 2px var(--surface); }
@@ -300,9 +341,96 @@
   .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--page); padding: 9px 14px; border-radius: 10px; font-size: 13px; z-index: 50; max-width: calc(100% - 32px); }
 
   .win.main { box-shadow: inset 0 0 0 1.5px var(--calm); }
+
+  /* Pixel skin (the ▦ button, remembered per viewer): the team as a party screen from a pastel handheld
+     game — cream paper, ink window frames and a clay accent. main is the leader in the deep accent, the
+     chosen task gets the blinking ▶ menu cursor. Red = live/acting, orange = busy, green = done. */
+  .pixel {
+    color-scheme: light;
+    --page: #f0eee6; --surface: #faf9f5; --tint: #ebe6da; --frame: #3d3929; --shade: #141413;
+    --text: #161616; --sub: #3f3f3f; --faint: #5f5f5f; --hair: #d6d1c4; --ring: inset 0 0 0 2px #d6d1c4;
+    --live: #d9435e; --onlive: #ffffff; --calm: #c6613f; --warn: #b8640f; --good: #5f8a3a; --me: #6a9bcc;
+    --win: inset 0 0 0 2px var(--frame), 0 0 0 2px var(--surface), 4px 4px 0 2px #cbc5b5;
+  }
+  .pixel body { font: 12px/1.7 "Galmuri11", "DungGeunMo", ui-monospace, monospace; -webkit-font-smoothing: none;
+    background-color: var(--page); background-image: radial-gradient(#ddd8ca 1px, transparent 1.2px); background-size: 6px 6px; }
+  /* A stopped window says so in its label; fading the whole card made its text unreadable here. */
+  .pixel .win.stopped { opacity: 1; }
+  .pixel .win.stopped .nm { color: var(--sub); }
+  .pixel *, .pixel *::before, .pixel *::after { border-radius: 0 !important; }
+  .pixel svg { shape-rendering: crispEdges; }
+  .pixel h1 { font: 700 22px/1.2 "Galmuri11", ui-monospace, monospace; color: #ffd84a; letter-spacing: .04em;
+    text-shadow: -1px 0 #161616, 1px 0 #161616, 0 -1px #161616, 0 1px #161616, 3px 3px 0 #161616; }
+  .pixel .nm, .pixel .tab, .pixel .sitem, .pixel b, .pixel th { font-weight: 700; }
+
+  .pixel .win, .pixel .card, .pixel .bellp, .pixel .smenu, .pixel .ping, .pixel .tools { box-shadow: var(--win); }
+  .pixel .win { padding: 14px 16px 12px; gap: 6px; }
+  .pixel .win:hover, .pixel .win:focus-visible { box-shadow: inset 0 0 0 2px var(--calm), 0 0 0 2px var(--surface), 4px 4px 0 2px #cbc5b5; background: #fffefb; }
+  .pixel .win.main { box-shadow: inset 0 0 0 3px var(--calm), inset 0 0 0 5px var(--tint), 0 0 0 2px var(--surface), 4px 4px 0 2px #cbc5b5; }
+  .pixel .win.moving { box-shadow: inset 0 0 0 2px var(--live), 0 0 0 2px var(--surface), 4px 4px 0 2px #cbc5b5; }
+  .pixel .role { background: var(--calm); color: #ffffff; padding: 0 6px; letter-spacing: 0; }
+  .pixel .role.sub { background: var(--frame); }
+  .pixel .ph.moving::before { content: '⚔ '; }
+  .pixel .ph.waiting::before { content: '♥ '; color: var(--live); }
+  .pixel .trunk, .pixel .subs { border-color: var(--frame); }
+  .pixel .trunk { background: var(--frame); }
+  .pixel .subs { border-left-style: dashed; }
+  .pixel .areas span, .pixel .kit span.i { background: var(--tint); box-shadow: inset 0 0 0 1px var(--hair); color: var(--text); }
+  .pixel .areas .work b { color: var(--text); }
+  .pixel .flow div, .pixel .asked { color: var(--text); }
+
+  .pixel .tabs { border-bottom: 2px solid var(--frame); gap: 6px; }
+  .pixel .tab { border: 2px solid transparent; border-bottom: 0; margin-bottom: 0; color: var(--sub); }
+  .pixel .tab[aria-selected="true"] { color: var(--surface); background: var(--frame); border-color: var(--frame); }
+  .pixel .tab[aria-selected="true"] .n { color: #e3ded1; }
+
+  .pixel .open, .pixel .copy, .pixel .more, .pixel .sopen, .pixel .bell, .pixel .skin {
+    border: 2px solid var(--frame); background: var(--surface); color: var(--text); box-shadow: 2px 2px 0 #cbc5b5; }
+  .pixel .open:hover, .pixel .copy:hover, .pixel .bell:hover, .pixel .skin:hover { border-color: var(--calm); color: var(--calm); }
+  .pixel .open:active, .pixel .copy:active, .pixel .more:active, .pixel .bell:active, .pixel .skin:active {
+    transform: translate(2px, 2px); box-shadow: none; }
+  .pixel .badge, .pixel .pn { box-shadow: 0 0 0 2px var(--surface); }
+
+  .pixel .side { background: var(--surface); border-right: 2px solid var(--frame); box-shadow: 4px 0 0 #e3ded1; }
+  .pixel .sh b { color: var(--calm); letter-spacing: .08em; }
+  .pixel .stasks { border-left: 2px dashed var(--hair); }
+  .pixel .sitem:hover { background: var(--page); color: var(--text); }
+  .pixel .sitem[aria-current="page"] { background: var(--tint); color: var(--text); }
+  .pixel .sitem[aria-current="page"]::before { content: '▶'; background: none; color: var(--calm); width: auto; top: 50%; bottom: auto;
+    left: -13px; transform: translateY(-50%); font-size: 11px; line-height: 1; }
+  .pixel .ini { box-shadow: inset 0 0 0 2px var(--hair); background: var(--page); color: var(--text); }
+  .pixel .sitem.proj .ini { background: var(--frame); color: var(--surface); box-shadow: none; }
+  .pixel .sitem[aria-current="page"] .ini { background: var(--calm); color: #ffffff; box-shadow: none; }
+  /* A chosen icon is an emoji: drawn in the colour emoji face (the pixel face has its own mono glyphs
+     for some), with no tile behind it, in every state. */
+  .ini.emo { font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif; font-weight: 400; line-height: 1; }
+  .pixel .ini.emo, .pixel .sitem.proj .ini.emo, .pixel .sitem[aria-current="page"] .ini.emo { background: none; box-shadow: none; color: inherit; }
+  .pixel .sren { border: 2px solid var(--calm); }
+
+  .pixel .drawer { border-left: 2px solid var(--frame); box-shadow: -4px 0 0 #e3ded1; }
+  .pixel .dh { border-bottom: 2px solid var(--frame); }
+  .pixel .bub.me { background: var(--me); box-shadow: 3px 3px 0 #cbc5b5; }
+  .pixel .bub.claude, .pixel .bub.in { box-shadow: inset 0 0 0 2px var(--hair), 3px 3px 0 #cbc5b5; }
+  .pixel .bub.in { box-shadow: inset 4px 0 0 var(--warn), inset 0 0 0 2px var(--hair), 3px 3px 0 #cbc5b5; }
+  .pixel .patch, .pixel .bub { font-family: "Galmuri11", ui-monospace, monospace; }
+  .pixel .toast { background: var(--frame); color: var(--surface); box-shadow: 4px 4px 0 #cbc5b5; }
+  .pixel .bellp .allow { color: #ffffff; }
+  .pixel .scrim { background: rgb(36 64 47 / .22); }
+  .pixel .ping::before { width: 6px; }
+  .pixel :focus-visible { outline: 2px solid var(--calm) !important; outline-offset: 2px; }
+
+  .skin { appearance: none; border: 1px solid var(--hair); background: var(--surface); color: var(--sub); width: 40px; height: 40px;
+    border-radius: 10px; display: grid; place-items: center; cursor: pointer; align-self: center; font-size: 16px; }
+  .skin:hover { color: var(--text); border-color: var(--calm); }
+  @media (prefers-reduced-motion: no-preference) {
+    .pixel .sitem[aria-current="page"]::before { animation: blink 1s steps(1) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    .pixel .win { transition: none; }
+  }
 </style>
 
 <div class="shell">
+<div class="smenu" id="smenu" role="menu" aria-label="Edit item" hidden></div>
 <nav class="side" id="side" aria-label="Tasks">
   <div class="sh"><b>Tasks</b>
     <button type="button" class="sfold" id="sfold" aria-controls="slist"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 17l-5-5 5-5"/><path d="M18 17l-5-5 5-5"/></svg></button></div>
@@ -315,6 +443,7 @@
     <span class="meta" id="tally"></span>
     <span class="meta repo" id="repo"></span>
     <button type="button" class="open openall" id="openall" title="Open every role of this view, main first, so the others join its window as tabs">Open all</button>
+    <button type="button" class="skin" id="skin" aria-pressed="false" title="Pixel look on/off">▦</button>
     <div class="bellw">
       <button type="button" class="bell" id="bell" data-alerts="off" aria-haspopup="true" aria-expanded="false" aria-controls="bellp" aria-label="Alerts">
         <svg class="ico off" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
@@ -352,6 +481,16 @@
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
+// Pixel look: off unless this viewer turned it on.
+let PIXEL = false;
+try { PIXEL = localStorage.getItem('as-skin') === 'pixel'; } catch { /* */ }
+function skin() {
+  document.documentElement.classList.toggle('pixel', PIXEL);
+  $('skin').setAttribute('aria-pressed', String(PIXEL));
+  $('skin').setAttribute('aria-label', PIXEL ? 'Pixel look: on' : 'Pixel look: off');
+}
+$('skin').onclick = () => { PIXEL = !PIXEL; try { localStorage.setItem('as-skin', PIXEL ? 'pixel' : 'plain'); } catch { /* */ } skin(); };
+skin();
 const esc = s => String(s ?? '').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
 const cut = (t, n) => { t = String(t ?? ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 const ago = ms => ms < 60e3 ? 'just now' : ms < 3600e3 ? Math.round(ms / 60e3) + 'm ago'
@@ -469,6 +608,10 @@ const fold = (k, head, count, body) => `<details class="fold" data-k="${esc(k)}"
   + `<summary>${head}<span class="cnt">${esc(count)}</span></summary>${body}</details>`;
 
 const resumeCmd = s => `cd "${s.cwd ?? ''}" && claude --resume ${s.id}`;
+// The window's grey next-prompt suggestion (suggest-relay mod), to copy into it by hand.
+const suggestLine = s => s?.suggest
+  ? `<div class="asked sug" title="${esc(s.suggest)}"><i>💡 next</i>${esc(cut(s.suggest, 80))} <span class="copy" role="button" tabindex="0" data-copy="${esc(s.suggest)}">copy</span></div>`
+  : '';
 
 function card(s, now, isMain) {
   const steps = (s.steps ?? []).map(x => `<div><b>${esc(x.tool ?? 'says')}</b>${esc(x.text)}</div>`).join('');
@@ -477,6 +620,7 @@ function card(s, now, isMain) {
     + (s.role ? `<span class="role ${isMain ? '' : 'sub'}">${esc(s.role)}</span>` : '')
     + `<span class="ph ${esc(s.phase)}">${esc(PHASE[s.phase] ?? '')} · ${esc(ago(s.idleMs))}</span></div>`
     + (s.asked ? `<div class="asked"><i>asked</i>${esc(cut(s.asked, 90))}</div>` : '')
+    + suggestLine(s)
     + (steps ? `<div class="flow">${steps}</div>` : '')
     + `<div class="foot"><span>${esc(s.branch ?? '')}</span>`
     + `<span><span class="copy" role="button" tabindex="0" data-win="${esc(s.id)}">open window</span> <span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span></span></div></button>`;
@@ -504,6 +648,7 @@ function roleCard(d, r, now) {
     + `<span class="meta2">${esc([r.shared ? 'shares main folder' : '', r.autonomy, r.model].filter(Boolean).join(' · '))}</span>`
     + `<span class="ph ${esc(s?.phase ?? '')}">${s ? esc(PHASE[s.phase] ?? '') + ' · ' + esc(ago(s.idleMs)) : 'no window'}</span></div>`
     + (order ? `<div class="asked"><i>order</i>${esc(cut(order.text, 90))}</div>` : s?.asked ? `<div class="asked"><i>asked</i>${esc(cut(s.asked, 90))}</div>` : '')
+    + suggestLine(s)
     + (steps ? `<div class="flow">${steps}</div>` : (s ? '' : `<div class="none">${esc(r.what || 'No session yet.')}</div>`))
     + (areas ? `<div class="areas">${areas}</div>` : '')
     + `<div class="foot"><span>${esc([r.branch, sends].filter(Boolean).join(' · '))}</span>`
@@ -567,8 +712,10 @@ let FAILS = 0;
 let ALL = null, CUR = null;
 try { CUR = localStorage.getItem('as-task'); } catch { /* */ }
 function tasksOf(all) {
-  return all.projects.flatMap((d, p) => [{ key: p + ':', p, task: null, label: d.title },
-    ...[...new Set(d.roles.map(r => r.task).filter(Boolean))].map(t => ({ key: p + ':' + t, p, task: t, label: t }))]);
+  // Keyed by the project's title, not its place in --also: the viewer's order, names and icons stay on
+  // the same project whatever order the board starts with. ponytail: two repos with one title share them.
+  return all.projects.flatMap((d, p) => [{ key: d.title + ':', p, task: null, label: d.title },
+    ...[...new Set(d.roles.map(r => r.task).filter(Boolean))].map(t => ({ key: d.title + ':' + t, p, task: t, label: t }))]);
 }
 function viewOf(all, t) {
   const d = all.projects[t.p];
@@ -578,6 +725,134 @@ function viewOf(all, t) {
   return { ...d, p: t.p, roles, sessions: d.sessions.filter(mine),
     map: d.map && { ...d.map, roles: d.map.roles.filter(r => names.has(r.name)), clashes: d.map.clashes.filter(c => c.who.some(w => names.has(w))) } };
 }
+// Sidebar order, remembered per viewer: keys in the order they were last arranged; new ones go last.
+let ORDER = [];
+try { ORDER = JSON.parse(localStorage.getItem('as-order')) ?? []; } catch { /* */ }
+const rank = k => { const i = ORDER.indexOf(k); return i < 0 ? Infinity : i; };
+const ranked = (xs, key) => [...xs].sort((a, b) => rank(key(a)) - rank(key(b)));
+function saveOrder() {
+  ORDER = [...$('slist').querySelectorAll('[data-task]')].map(b => b.dataset.task);
+  try { localStorage.setItem('as-order', JSON.stringify(ORDER)); } catch { /* */ }
+  render();
+}
+// What moves with an item: a project takes its whole group; a task moves alone among its siblings.
+const unit = b => b.classList.contains('proj') ? b.closest('.sgrp') : b.parentElement;
+const peers = (a, b) => a !== b && unit(a).parentElement === unit(b).parentElement;
+let DRAG = null;
+function clearDrop() { for (const b of $('slist').querySelectorAll('.drop-before, .drop-after')) b.classList.remove('drop-before', 'drop-after'); }
+$('slist').addEventListener('dragstart', e => {
+  DRAG = e.target.closest('[data-task]'); if (!DRAG) return;
+  e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', DRAG.dataset.task);
+  DRAG.classList.add('dragging');
+});
+$('slist').addEventListener('dragover', e => {
+  const b = e.target.closest('[data-task]'); if (!DRAG || !b || !peers(DRAG, b)) return;
+  e.preventDefault(); clearDrop();
+  const r = b.getBoundingClientRect();
+  b.classList.add(e.clientY < r.top + r.height / 2 ? 'drop-before' : 'drop-after');
+});
+$('slist').addEventListener('drop', e => {
+  const b = e.target.closest('[data-task]'); if (!DRAG || !b || !peers(DRAG, b)) return;
+  e.preventDefault();
+  const before = b.classList.contains('drop-before');
+  unit(b).parentElement.insertBefore(unit(DRAG), before ? unit(b) : unit(b).nextSibling);
+  saveOrder();
+});
+$('slist').addEventListener('dragend', () => { DRAG?.classList.remove('dragging'); DRAG = null; clearDrop(); });
+$('slist').addEventListener('keydown', e => {
+  const b = e.target.closest('[data-task]'); if (!b || !e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+  e.preventDefault();
+  const u = unit(b), to = e.key === 'ArrowUp' ? u.previousElementSibling : u.nextElementSibling?.nextElementSibling;
+  if (e.key === 'ArrowUp' && !to) return;
+  u.parentElement.insertBefore(u, to ?? null);
+  saveOrder();
+  $('slist').querySelector(`[data-task="${CSS.escape(b.dataset.task)}"]`)?.focus();
+});
+// The viewer's own edits, in this browser only — agents.json and the team never change: a name and an
+// icon per item, items hidden from the list, and projects folded shut.
+let META = {}, EDITING = false, MENU_KEY = null, HID_OPEN = false;
+try { META = JSON.parse(localStorage.getItem('as-meta')) ?? {}; } catch { /* */ }
+const meta = k => META[k] ?? {};
+function setMeta(k, patch) {
+  const m = { ...meta(k), ...patch };
+  for (const f of Object.keys(m)) if (m[f] === undefined || m[f] === '' || m[f] === false) delete m[f];
+  if (Object.keys(m).length) META[k] = m; else delete META[k];
+  try { localStorage.setItem('as-meta', JSON.stringify(META)); } catch { /* */ }
+  render();
+}
+const itemOf = k => $('slist').querySelector(`[data-task="${CSS.escape(k)}"]`);
+function rename(k) {
+  const b = itemOf(k); if (!b || FOLD) return;
+  closeMenu();
+  const inp = document.createElement('input');
+  inp.className = 'sren'; inp.value = b.title; inp.setAttribute('aria-label', 'Name — empty restores ' + b.dataset.label);
+  b.parentElement.append(inp); EDITING = true; inp.focus(); inp.select();
+  let done = false;
+  const end = save => {
+    if (done) return; done = true; EDITING = false;
+    const v = inp.value.trim(); inp.remove();
+    if (save) setMeta(k, { name: v === b.dataset.label ? undefined : v }); else render();
+    itemOf(k)?.focus();
+  };
+  inp.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') end(true); if (e.key === 'Escape') end(false); });
+  inp.addEventListener('blur', () => end(true));
+}
+const EMOJI = ['📁','📌','⭐','🔥','🚀','🎯','💡','🧪','🛠️','⚙️','📊','📈','🧩','🗂️','📝','📦','🤖','🐛','✅','🔒','🌐','💬','🏭','💰'];
+function openMenu(k, x, y) {
+  const m = $('smenu'), it = meta(k);
+  MENU_KEY = k;
+  m.innerHTML = '<button type="button" role="menuitem" data-act="rename">Rename</button>'
+    + `<button type="button" role="menuitem" data-act="${it.hidden ? 'show' : 'hide'}">${it.hidden ? 'Show in list' : 'Hide from list'}</button>`
+    + (it.name || it.icon ? '<button type="button" role="menuitem" data-act="reset">Reset name and icon</button>' : '')
+    + `<div class="semo" role="group" aria-label="Icon">${EMOJI.map(e => `<button type="button" role="menuitem" data-icon="${e}" aria-label="Icon ${e}">${e}</button>`).join('')}</div>`;
+  m.hidden = false;
+  const r = m.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(x, innerWidth - r.width - 8)) + 'px';
+  m.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + 'px';
+  for (const b of $('slist').querySelectorAll('.smore')) b.setAttribute('aria-expanded', String(b.dataset.key === k));
+  m.querySelector('button').focus();
+}
+function closeMenu(back = false) {
+  if ($('smenu').hidden) return;
+  $('smenu').hidden = true;
+  for (const b of $('slist').querySelectorAll('.smore[aria-expanded="true"]')) b.setAttribute('aria-expanded', 'false');
+  if (back && MENU_KEY != null) itemOf(MENU_KEY)?.focus();
+  MENU_KEY = null;
+}
+$('smenu').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b || MENU_KEY == null) return;
+  const k = MENU_KEY, act = b.dataset.act;
+  if (act === 'rename') return rename(k);
+  closeMenu(true);
+  if (b.dataset.icon) setMeta(k, { icon: b.dataset.icon });
+  else if (act === 'hide') setMeta(k, { hidden: true });
+  else if (act === 'show') setMeta(k, { hidden: false });
+  else if (act === 'reset') setMeta(k, { name: undefined, icon: undefined });
+});
+$('smenu').addEventListener('keydown', e => {
+  if (e.key === 'Escape') { e.preventDefault(); return closeMenu(true); }
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  e.preventDefault();
+  const bs = [...$('smenu').querySelectorAll('button')], i = bs.indexOf(document.activeElement);
+  bs[(i + (e.key === 'ArrowDown' ? 1 : -1) + bs.length) % bs.length].focus();
+});
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#smenu, .smore')) closeMenu(); });
+$('slist').addEventListener('click', e => {
+  const more = e.target.closest('.smore');
+  if (more) {
+    if (MENU_KEY === more.dataset.key) return closeMenu();
+    const r = more.getBoundingClientRect(); return openMenu(more.dataset.key, r.left, r.bottom + 4);
+  }
+  const fold = e.target.closest('.scaret'); if (fold) return setMeta(fold.dataset.key, { fold: !meta(fold.dataset.key).fold });
+  const show = e.target.closest('[data-show]'); if (show) return setMeta(show.dataset.show, { hidden: false });
+});
+$('slist').addEventListener('contextmenu', e => {
+  const b = e.target.closest('[data-task]'); if (!b) return;
+  e.preventDefault(); openMenu(b.dataset.task, e.clientX, e.clientY);
+});
+$('slist').addEventListener('dblclick', e => { const b = e.target.closest('[data-task]'); if (b) rename(b.dataset.task); });
+$('slist').addEventListener('keydown', e => { const b = e.target.closest('[data-task]'); if (b && e.key === 'F2') { e.preventDefault(); rename(b.dataset.task); } });
+$('slist').addEventListener('toggle', e => { if (e.target.classList?.contains('shid')) HID_OPEN = e.target.open; }, true);
 function pickTask(key) { CUR = key; try { localStorage.setItem('as-task', key); } catch { /* */ } render(); }
 $('slist').addEventListener('click', e => {
   const b = e.target.closest('[data-task]'); if (!b) return;
@@ -645,17 +920,33 @@ function render() {
   CUR = t.key;
   document.body.classList.toggle('noside', tasks.length < 2);
   let total = 0;
-  const item = x => {
-    const n = viewOf(ALL, x).sessions.filter(s => s.phase === 'waiting' && !(x.task && s.role === 'main') && unacked(s)).length;
-    total += n;
-    return `<button type="button" class="sitem${x.task ? '' : ' proj'}" data-task="${esc(x.key)}" title="${esc(x.label)}"${x.key === t.key ? ' aria-current="page"' : ''}>`
-      + `<span class="ini" aria-hidden="true">${esc([...x.label][0]?.toUpperCase() ?? '?')}</span><span class="lb">${esc(x.label)}</span>`
-      + (n ? `<span class="pn">${n}<span class="vh"> waiting</span></span>` : '') + '</button>';
+  const waiting = x => viewOf(ALL, x).sessions.filter(s => s.phase === 'waiting' && !(x.task && s.role === 'main') && unacked(s)).length;
+  const nameOf = x => meta(x.key).name || x.label;
+  const item = (x, n, lead = '') => {
+    const name = nameOf(x), icon = meta(x.key).icon;
+    return `<div class="srow">${lead}<button type="button" draggable="true" class="sitem${x.task ? '' : ' proj'}" data-task="${esc(x.key)}" data-label="${esc(x.label)}" title="${esc(name)}"${x.key === t.key ? ' aria-current="page"' : ''}>`
+      + `<span class="ini${icon ? ' emo' : ''}" aria-hidden="true">${esc(icon || ([...name][0]?.toUpperCase() ?? '?'))}</span><span class="lb">${esc(name)}</span>`
+      + (n ? `<span class="pn">${n}<span class="vh"> waiting</span></span>` : '') + '</button>'
+      + `<button type="button" class="sbtn smore" data-key="${esc(x.key)}" aria-label="Edit ${esc(name)}" aria-haspopup="menu" aria-expanded="${MENU_KEY === x.key}">⋯</button></div>`;
   };
-  paint('slist', ALL.projects.map((_, p) => {
+  // A folded project carries its tasks' waiting count; a hidden one takes its tasks with it.
+  const hidden = [];
+  const list = ranked(ALL.projects.map((_, p) => p), p => ALL.projects[p].title + ':').map(p => {
     const [head, ...subs] = tasks.filter(x => x.p === p);
-    return `<div class="sgrp">${item(head)}${subs.length ? `<div class="stasks">${subs.map(item).join('')}</div>` : ''}</div>`;
-  }).join(''));
+    const n = new Map([head, ...subs].map(x => [x.key, waiting(x)]));
+    for (const v of n.values()) total += v;
+    if (meta(head.key).hidden) { hidden.push(head); return ''; }
+    const shown = ranked(subs, x => x.key).filter(x => !(meta(x.key).hidden && hidden.push(x)));
+    const fold = !!meta(head.key).fold && shown.length > 0;
+    const lead = shown.length
+      ? `<button type="button" class="sbtn scaret" data-key="${esc(head.key)}" aria-expanded="${!fold}" aria-label="${fold ? 'Expand' : 'Collapse'} ${esc(nameOf(head))}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`
+      : '<span class="scaret-sp"></span>';
+    const headN = n.get(head.key) + (fold ? shown.reduce((a, x) => a + n.get(x.key), 0) : 0);
+    return `<div class="sgrp">${item(head, headN, lead)}${shown.length && !fold ? `<div class="stasks">${shown.map(x => item(x, n.get(x.key))).join('')}</div>` : ''}</div>`;
+  }).join('') + (hidden.length ? `<details class="shid"${HID_OPEN ? ' open' : ''}><summary>Hidden · ${hidden.length}</summary>`
+    + hidden.map(x => `<div class="srow"><span class="lb">${esc(nameOf(x))}</span><button type="button" class="sbtn" data-show="${esc(x.key)}" aria-label="Show ${esc(nameOf(x))}">Show</button></div>`).join('')
+    + '</details>' : '');
+  if (!EDITING) paint('slist', list);
   $('sopenn').textContent = total || '';
   $('sopen').setAttribute('aria-label', total ? `Tasks: ${total} waiting` : 'Tasks');
   const d = LAST = viewOf(ALL, t);

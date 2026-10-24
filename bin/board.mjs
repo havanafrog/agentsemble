@@ -71,6 +71,18 @@ export function liveSessions(dir = sessionDir(), mine = new Set()) {
   return [...best.values()].sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+/**
+ * A window's grey next-prompt suggestion, left by the suggest-relay mod (one file per session).
+ * Stale once the log moved on past it; the slack covers the log lines a turn writes as it ends.
+ */
+const SUGGEST_SLACK = 5000;
+export function suggestOf(id, logMs, dir = join(claudeHome(), 'agentsemble-suggest')) {
+  try {
+    const j = JSON.parse(readFileSync(join(dir, id + '.json'), 'utf8'));
+    return j?.text && j.at >= logMs - SUGGEST_SLACK ? String(j.text).slice(0, 2000) : null;
+  } catch { return null; }
+}
+
 /** One line → what was done, in a few words. A tool use beats text: what it is doing matters more. */
 export function describe(row) {
   const m = row?.message;
@@ -83,8 +95,9 @@ export function describe(row) {
   const tool = m.content.find(c => c.type === 'tool_use');
   if (tool) {
     const i = tool.input ?? {};
+    // A message to another window is addressed by its socket (uds:\\.\pipe\…) — no use to a person.
     return { role: m.role, kind: 'tool', tool: tool.name,
-      text: tool.name === 'SendMessage' && i.to ? `→ ${i.to}${i.summary ? ': ' + i.summary : ''}` : i.description ?? i.command ?? i.file_path ?? i.pattern ?? i.prompt ?? i.query ?? i.url ?? i.action ?? '' };
+      text: tool.name === 'SendMessage' && i.to ? `→ ${/^\w+:/.test(i.to) ? 'a window' : i.to}${i.summary ? ': ' + i.summary : ''}` : i.description ?? i.command ?? i.file_path ?? i.pattern ?? i.prompt ?? i.query ?? i.url ?? i.action ?? '' };
   }
   const text = m.content.filter(c => c.type === 'text').map(c => c.text).join(' ').trim();
   if (text) return { role: m.role, kind: 'text', text };
@@ -243,6 +256,7 @@ export function sessions(dir, now = Date.now(), role = null, names = sessionName
       cwd: rows.find(r => r.cwd)?.cwd ?? null,
       turns: rows.filter(r => r.type === 'assistant').length,
       phase: phaseOf(last, idle), idleMs: idle, last, steps, asked,
+      suggest: suggestOf(id, st.mtimeMs),
     });
   }
   return out.sort((a, b) => a.idleMs - b.idleMs);
@@ -703,6 +717,7 @@ export async function selftest(ok) {
     ok('five most recent moves, oldest first', S[0].steps.length === STEPS && S[0].steps.at(-1).tool === 'SendMessage'
        && S[0].steps.every((s, i) => i === 0 || s.at >= S[0].steps[i - 1].at));
     ok('sent orders are collected', S[0].sends.length === 1 && S[0].sends[0].to === 'ui');
+    ok('a message to another window by its socket says so, not the pipe path', describe({ message: { role: 'assistant', content: [{ type: 'tool_use', name: 'SendMessage', input: { to: 'uds:\\\\.\\pipe\\x', summary: 'hi' } }] } }).text === '→ a window: hi');
     ok('a SendMessage move says who it went to and what about', S[0].steps.at(-1).text === '→ ui: contrast', S[0].steps.at(-1).text);
     ok('name falls back to the first ask', S[0].name === 'do this' && S[0].role === 'main');
     const shs = [{ id: 'a', name: 'review', role: 'main' }, { id: 'b', name: 'main', role: 'main' }, { id: 'c', name: null, role: 'main' }];
@@ -791,6 +806,11 @@ export async function selftest(ok) {
       ok('board carries its title and each role\'s task', tb.title === 'App' && tb.roles.find(r => r.name === 'sim').task === 'sim run');
       rmSync(join(repo, 'agents.json'));
       ok('no agents.json: repo alone as main, titled by its folder', board(repo).roles.map(r => r.name).join() === 'main' && board(repo).title === 'app');
+      const sd = join(t, 'home', 'agentsemble-suggest'); mkdirSync(sd, { recursive: true });
+      writeFileSync(join(sd, 'a.json'), JSON.stringify({ text: 'run the tests', at: 10_000 }));
+      writeFileSync(join(sd, 'b.json'), '');
+      ok('a suggestion shows until the log moves past it; an emptied or missing one shows nothing',
+         suggestOf('a', 12_000) === 'run the tests' && suggestOf('a', 20_000) === null && suggestOf('b', 0) === null && suggestOf('c', 0) === null);
     } finally {
       if (old === undefined) delete process.env.CLAUDE_HOME; else process.env.CLAUDE_HOME = old;
       if (oldL === undefined) delete process.env.OPS_LEDGER; else process.env.OPS_LEDGER = oldL;
