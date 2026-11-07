@@ -115,21 +115,15 @@ export function launch(dir, cmd, platform = process.platform, run = spawn, win =
 export const cleanEnv = env => Object.fromEntries(Object.entries(env).filter(([k]) => !/^CLAUDE_CODE_|^CLAUDECODE$|^CLAUDE_PID$/.test(k)));
 
 /**
- * One click from the board. A live window is brought forward; never reopen a live session — two
- * windows on one session break both. A live window without a name can't be found: say so.
- * @param s     the session (id, role) or null to start the role fresh
+ * One click from the board: a live window is brought forward. The board never opens a new window —
+ * a closed session says 'closed' (its card has "copy resume" to reopen it by hand). Starting windows
+ * is `agentsemble open` (team.mjs) only. A live window without a name can't be found: say so.
  * @param live  the registry entry if its window is open
- * @param role  { dir, model, shared, win, near } — win: the Windows Terminal window its tab joins;
- *              near: the name of a live window (main's) to join instead — brought forward first, then
- *              `wt -w 0` (the most recent window) adds the tab there. Not found: `win` as before.
  */
-export async function openWindow({ s, live, role }, platform = process.platform, run = spawn, find = focus) {
-  if (live) {
-    const r = await find(live.named ? live.name : null, platform);
-    return r === 'noname' ? 'unnamed' : r;
-  }
-  const win = role.near && platform === 'win32' && await find(role.near, platform) === 'ok' ? '0' : role.win ?? null;
-  return launch(role.dir, command({ id: s?.id ?? null, model: s ? null : role.model ?? null, name: s ? null : role.name ?? null }), platform, run, win);
+export async function openWindow({ live }, platform = process.platform, find = focus) {
+  if (!live) return 'closed';
+  const r = await find(live.named ? live.name : null, platform);
+  return r === 'noname' ? 'unnamed' : r;
 }
 
 export async function selftest(ok) {
@@ -141,18 +135,12 @@ export async function selftest(ok) {
      && command({ model: 'opus' }) === 'claude --model opus' && command() === 'claude');
   const calls = [];
   const run = (...a) => { calls.push(a); return { unref() {} }; };
-  ok('a closed session reopens in its role folder', await openWindow({ s: { id: '0123abcd-0000-4000-8000-0123456789ab' }, live: null, role: { dir: 'D:/w/ui' } }, 'win32', run) === 'opened'
-     && calls[0][1].at(-1) === 'claude --resume 0123abcd-0000-4000-8000-0123456789ab' && calls[0][2].cwd === 'D:/w/ui');
-  ok('a role with no session starts fresh with its model', await openWindow({ s: null, live: null, role: { dir: 'D:/w', model: 'opus', name: 'review' } }, 'win32', run) === 'opened'
-     && calls[1][1].at(-1) === 'claude --model opus --name review');
-  ok('a live window is focused, never reopened', await openWindow({ s: { id: 'x' }, live: { named: true, name: 'ui' }, role: { dir: '.' } }, 'win32', run, async n => n === 'ui' ? 'ok' : 'notfound') === 'ok' && calls.length === 2);
-  ok('a live window with no name says so', await openWindow({ s: { id: 'x' }, live: { named: false, name: 'x' }, role: { dir: '.' } }, 'win32', run, async n => n ? 'ok' : 'noname') === 'unnamed');
-  ok('with a window name it opens as a tab in that Windows Terminal window', await openWindow({ s: null, live: null, role: { dir: 'D:/w', name: 'ui', win: 'agentsemble-p1' } }, 'win32', run) === 'opened'
-     && calls[2][0] === 'wt' && calls[2][1].join(' ') === '-w agentsemble-p1 new-tab -d D:/w cmd /k claude --name ui');
-  ok('main open: the tab joins its window (brought forward, then the most recent window)', await openWindow({ s: null, live: null, role: { dir: 'D:/w', name: 'ui', win: 'agentsemble-p1', near: 'main' } }, 'win32', run, async n => n === 'main' ? 'ok' : 'notfound') === 'opened'
-     && calls[3][1].slice(0, 2).join(' ') === '-w 0');
-  ok('main not found: the project window as before', await openWindow({ s: null, live: null, role: { dir: 'D:/w', name: 'ui', win: 'agentsemble-p1', near: 'main' } }, 'win32', run, async () => 'notfound') === 'opened'
-     && calls[4][1].slice(0, 2).join(' ') === '-w agentsemble-p1');
+  ok('the board never opens a window: a closed session or a role with no session says closed',
+     await openWindow({ s: { id: 'x' }, live: null, role: { dir: '.' } }, 'win32') === 'closed' && await openWindow({ s: null, live: null, role: { dir: '.' } }, 'win32') === 'closed');
+  ok('a live window is focused', await openWindow({ live: { named: true, name: 'ui' } }, 'win32', async n => n === 'ui' ? 'ok' : 'notfound') === 'ok');
+  ok('a live window with no name says so', await openWindow({ live: { named: false, name: 'x' } }, 'win32', async n => n ? 'ok' : 'noname') === 'unnamed');
+  ok('with a window name launch opens a tab in that Windows Terminal window', launch('D:/w', command({ name: 'ui' }), 'win32', run, 'agentsemble-p1') === 'opened'
+     && calls[0][0] === 'wt' && calls[0][1].join(' ') === '-w agentsemble-p1 new-tab -d D:/w cmd /k claude --name ui');
   // A missing program: spawn returns, then emits 'error' — as node does.
   const noWt = (...a) => { calls.push(a); const h = {}; if (a[0] === 'wt') queueMicrotask(() => h.error?.(new Error('ENOENT'))); return { on(e, f) { h[e] = f; }, unref() {} }; };
   ok('no Windows Terminal: a plain window instead', launch('D:/w', 'claude', 'win32', noWt, 'agentsemble-p0') === 'opened'
@@ -163,6 +151,6 @@ export async function selftest(ok) {
   const env = calls.at(-1)[2].env;
   for (const k of ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_PID', 'CLAUDE_HOME_KEEP']) if (!(k in was)) delete process.env[k];
   ok('a new window does not inherit the Claude session it was opened from', !('CLAUDECODE' in env) && !('CLAUDE_CODE_CHILD_SESSION' in env) && !('CLAUDE_PID' in env) && env.CLAUDE_HOME_KEEP === 'x');
-  calls.length = 2;
-  ok('not Windows: nothing is launched', await openWindow({ s: null, live: null, role: { dir: '.' } }, 'linux', run) === 'unsupported' && calls.length === 2);
+  const n = calls.length;
+  ok('not Windows: nothing is launched', launch('.', 'claude', 'linux', run) === 'unsupported' && calls.length === n);
 }

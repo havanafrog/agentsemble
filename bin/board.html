@@ -86,6 +86,16 @@
   .tag.refute { color: var(--live); } .tag.hold { color: var(--warn); } .tag.note { color: var(--sub); }
   .what { font-size: 12.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .when { margin-left: auto; font-size: 11px; color: var(--sub); flex: none; }
+  .cost { color: var(--text); cursor: help; white-space: nowrap; }
+
+  .graph { position: relative; padding: 0; }
+  .graph svg { position: absolute; left: 6px; top: 0; }
+  .graph .row { height: 30px; padding: 0 14px 0 calc(var(--gw) + 14px); border-bottom: 0; align-items: center; }
+  .graph .ln { fill: none; stroke: var(--faint); stroke-width: 2; }
+  .graph .ln.mn { stroke: var(--sub); } .graph .ln.op { stroke-dasharray: 3 3; }
+  .graph .d { stroke: var(--surface); stroke-width: 2; fill: var(--sub); }
+  .graph .d.claim { fill: var(--calm); } .graph .d.confirm { fill: var(--good); }
+  .graph .d.refute { fill: var(--live); } .graph .d.hold { fill: var(--warn); }
 
   details.fold { border-bottom: 1px solid var(--hair); }
   details.fold:last-child { border-bottom: 0; }
@@ -335,7 +345,6 @@
     padding: 4px 12px; min-height: 28px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; margin-left: auto; }
   .open:hover { border-color: var(--calm); }
   .open + .copy { margin-left: 0; }
-  .open.openall { margin-left: 0; align-self: center; }
   .open:disabled { cursor: progress; color: var(--sub); border-color: var(--hair); }
   .clashes { color: var(--live); font-size: 12.5px; margin: 10px 2px 0; }
   .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--page); padding: 9px 14px; border-radius: 10px; font-size: 13px; z-index: 50; max-width: calc(100% - 32px); }
@@ -439,7 +448,6 @@
     <h1>agentsemble</h1>
     <span class="meta" id="tally"></span>
     <span class="meta repo" id="repo"></span>
-    <button type="button" class="open openall" id="openall" title="Open every role of this view, main first, so the others join its window as tabs">Open all</button>
     <div class="bellw">
       <button type="button" class="bell" id="bell" data-alerts="off" aria-haspopup="true" aria-expanded="false" aria-controls="bellp" aria-label="Alerts">
         <svg class="ico off" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
@@ -593,6 +601,15 @@ addEventListener('toggle', e => {
 const fold = (k, head, count, body) => `<details class="fold" data-k="${esc(k)}"${OPENED.has(k) ? ' open' : ''}>`
   + `<summary>${head}<span class="cnt">${esc(count)}</span></summary>${body}</details>`;
 
+// Cost: Claude Code's own token counts × list prices (bin/lib/cost.mjs). Not a bill.
+const usd = n => n < 0.01 ? '<$0.01' : '$' + (n < 100 ? n.toFixed(2) : Math.round(n).toLocaleString('en-US'));
+const ktok = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : Math.round(n / 1e3) + 'k';
+const COST_TIP = 'API list price of the tokens in the log: Claude Code\'s usage numbers × published prices, each response counted once, subagents included. On a subscription nobody is billed this. Side calls (titles, compaction summaries) are not logged, so not counted. ctx = tokens the window carries now.';
+const sumCost = ss => ss.reduce((a, s) => s.cost ? { usd: a.usd + s.cost.usd, unpriced: a.unpriced + s.cost.unpriced, ctx: a.ctx } : a,
+  { usd: 0, unpriced: 0, ctx: null });
+const costTag = c => c ? `<span class="cost" title="${esc(COST_TIP + (c.unpriced ? ` ${c.unpriced} responses from a model not in the price table are left out.` : ''))}">`
+  + `${usd(c.usd)}${c.unpriced ? '+?' : ''}${c.ctx ? ' · ctx ' + ktok(c.ctx) : ''}</span>` : '';
+
 const resumeCmd = s => `cd "${s.cwd ?? ''}" && claude --resume ${s.id}`;
 // The window's grey next-prompt suggestion (suggest-relay mod), to copy into it by hand.
 const suggestLine = s => s?.suggest
@@ -608,7 +625,7 @@ function card(s, now, isMain) {
     + (s.asked ? `<div class="asked"><i>asked</i>${esc(cut(s.asked, 90))}</div>` : '')
     + suggestLine(s)
     + (steps ? `<div class="flow">${steps}</div>` : '')
-    + `<div class="foot"><span>${esc(s.branch ?? '')}</span>`
+    + `<div class="foot"><span>${esc(s.branch ?? '')}</span>${costTag(s.cost)}`
     + `<span><span class="copy" role="button" tabindex="0" data-win="${esc(s.id)}">open window</span> <span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span></span></div></button>`;
 }
 
@@ -629,6 +646,8 @@ function roleCard(d, r, now) {
   const sends = m.edges.filter(e => e.from === r.name).map(e => `→ ${e.to} ${e.n}`).join(' · ');
   const steps = (s?.steps ?? []).slice(-3).map(x => `<div><b>${esc(x.tool ?? 'says')}</b>${esc(x.text)}</div>`).join('');
   const isMain = r.isMain;
+  const mine = d.sessions.filter(x => x.role === r.name);
+  const cost = mine.some(x => x.cost) ? { ...sumCost(mine), ctx: s?.cost?.ctx } : null;
   return `<div class="win rolecard ${s?.phase === 'moving' || s?.phase === 'stopped' ? s.phase : ''} ${isMain ? 'main' : ''}"${s ? ` data-open="${esc(s.id)}" role="button" tabindex="0" aria-label="Read ${esc(r.name)} conversation"` : ''}>`
     + `<div class="head">${s && unread(s) ? '<span class="unread" title="new since you last opened it"></span>' : ''}<span class="nm">${esc(r.name)}</span>`
     + `<span class="meta2">${esc([r.shared ? 'shares main folder' : '', r.autonomy, r.model].filter(Boolean).join(' · '))}</span>`
@@ -637,8 +656,8 @@ function roleCard(d, r, now) {
     + suggestLine(s)
     + (steps ? `<div class="flow">${steps}</div>` : (s ? '' : `<div class="none">${esc(r.what || 'No session yet.')}</div>`))
     + (areas ? `<div class="areas">${areas}</div>` : '')
-    + `<div class="foot"><span>${esc([r.branch, sends].filter(Boolean).join(' · '))}</span>`
-    + `<button type="button" class="open" data-win="${esc(s?.id ?? '')}" data-role="${esc(r.name)}" title="${s ? 'Bring its terminal to the front, or reopen it' : 'Open a new terminal for this role'}">${s ? 'Open' : 'Start'}</button>`
+    + `<div class="foot"><span>${esc([r.branch, sends].filter(Boolean).join(' · '))}</span>${costTag(cost)}`
+    + (s ? `<button type="button" class="open" data-win="${esc(s.id)}" data-role="${esc(r.name)}" title="Bring its terminal to the front">Open</button>` : '')
     + (s ? `<span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span>` : '') + '</div></div>';
 }
 function mapHtml(d, now) {
@@ -675,15 +694,45 @@ function ledgerRow(r, now) {
   return `<div class="row"><span class="rid">${esc(r.id ?? '')}</span><span class="tag ${esc(cls)}">${esc(r.kind === 'verdict' ? r.v : r.kind)}</span>`
     + `<span class="what">${esc(r.what ?? r.note ?? r.text ?? '')}</span><span class="when">${esc(r.by ?? '')}${Number.isFinite(t) ? ' · ' + ago(now - t) : ''}</span></div>`;
 }
+// The ledger as a git graph, newest on top: main runs down the left, each claim branches off it,
+// its verdicts and notes are commits on the branch (red refute, amber hold), and confirm merges it
+// back. A branch still open runs dashed to the top.
+const GH = 30, GW = 14;
+function ledgerGraph(g, now) {
+  const ev = [...g.claims.flatMap(c => c.rows.map(r => ({ r, ref: c.id }))), ...g.notes.flatMap(n => n.rows.map(r => ({ r, ref: null })))]
+    .sort((a, b) => (Date.parse(a.r.at) || 0) - (Date.parse(b.r.at) || 0));
+  const live = new Map(), busy = [], spans = [];
+  ev.forEach((e, i) => {
+    if (!e.ref) { e.lane = 0; return; }
+    let s = live.get(e.ref);
+    if (!s) {
+      let l = 1; while (busy[l]) l++;
+      busy[l] = true; s = { lane: l, from: i, to: i, merged: false }; live.set(e.ref, s); spans.push(s);
+    }
+    s.to = i; e.lane = s.lane;
+    if (e.r.kind === 'verdict' && e.r.v === 'confirm') { s.merged = true; busy[s.lane] = false; live.delete(e.ref); }
+  });
+  const n = ev.length, lanes = Math.max(0, ...ev.map(e => e.lane)) + 1, w = lanes * GW + 2;
+  const x = l => 7 + l * GW, y = i => (n - 1 - i) * GH + GH / 2, x0 = x(0);
+  const path = (d, cls = '') => `<path class="ln ${cls}" d="${d}"/>`;
+  const lines = path(`M${x0} ${y(n - 1)}V${y(0)}`, 'mn') + spans.map(s => {
+    const xl = x(s.lane), a = y(s.from), b = y(s.to);
+    return path(`M${x0} ${a + GH / 2}C${x0} ${a} ${xl} ${a + GH / 2} ${xl} ${a}V${b}`)
+      + (s.merged ? path(`M${xl} ${b}C${xl} ${b - GH / 2} ${x0} ${b} ${x0} ${b - GH / 2}`) : path(`M${xl} ${b}V0`, 'op'));
+  }).join('');
+  const dots = ev.map((e, i) => `<circle class="d ${esc(e.r.kind === 'verdict' ? e.r.v : e.r.kind)}" cx="${x(e.lane)}" cy="${y(i)}" r="5"/>`).join('');
+  const rows = ev.slice().reverse().map(e => ledgerRow(e.r, now).replace('<div class="row">', `<div class="row" title="${esc(e.r.what ?? e.r.note ?? e.r.text ?? '')}">`)).join('');
+  return `<div class="card graph" style="--gw:${w}px"><svg width="${w}" height="${n * GH}" aria-hidden="true">${lines}${dots}</svg>${rows}</div>`;
+}
 function ledgerHtml(g, now) {
   if (!g.claims.length && !g.notes.length) return '<div class="empty">The ledger is empty. The builder adds claims with <code>/ops claim</code>.</div>';
   const open = g.claims.filter(c => !c.done), done = g.claims.filter(c => c.done);
-  return `<div class="card">` + (open.length ? open.map(c => c.rows.map(r => ledgerRow(r, now)).join('')).join('') : '<div class="empty">No open claims.</div>') + '</div>'
-    + `<div class="card">`
+  return ledgerGraph(g, now) + `<div class="card">` + fold('led:list', '<b>List</b> by claim', g.claims.length + g.notes.length,
+    (open.length ? open.map(c => c.rows.map(r => ledgerRow(r, now)).join('')).join('') : '<div class="empty">No open claims.</div>')
     + (done.length ? fold('led:done', '<b>Done</b> last verdict confirm', done.length, done.map(c => fold('led:' + c.id,
         `<b>${esc(c.id)}</b> ${esc(cut(c.rows[0].what ?? '', 70))}`, c.rows.filter(r => r.kind === 'verdict').map(r => r.v).join(' → '),
         c.rows.map(r => ledgerRow(r, now)).join(''))).join('')) : '')
-    + g.notes.map(n => fold('note:' + n.label, `<b>${esc(n.label)}</b> notes`, n.rows.length, n.rows.map(r => ledgerRow(r, now)).join(''))).join('')
+    + g.notes.map(n => fold('note:' + n.label, `<b>${esc(n.label)}</b> notes`, n.rows.length, n.rows.map(r => ledgerRow(r, now)).join(''))).join(''))
     + '</div>';
 }
 
@@ -938,7 +987,9 @@ function render() {
   const d = LAST = viewOf(ALL, t);
   const now = d.now;
   const off = d.roles.reduce((a, r) => a + [...r.kit.skills, ...r.kit.plugins].filter(i => i.st === 'miss' || i.st === 'extra').length, 0);
+  const spent = sumCost(d.sessions);
   paint('tally', `<b>${d.sessions.filter(s => s.phase !== 'stopped').length}</b> active · <b>${d.open.length}</b> open claims`
+    + (d.sessions.some(s => s.cost) ? ` · ${costTag(spent)} all windows` : '')
     + (off ? ` · <span class="warn">${off} tool mismatch</span>` : ''));
   $('repo').textContent = [d.repo.branch, d.repo.head?.hash, d.repo.dirty.length ? d.repo.dirty.length + ' uncommitted' : '',
     d.repo.ahead ? d.repo.ahead + ' ahead' : ''].filter(Boolean).join(' · ');
@@ -987,10 +1038,10 @@ document.addEventListener('keydown', e => {
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-open]')) { e.preventDefault(); openDrawer(e.target.dataset.open); }
 });
 
-// Open a role's terminal on this PC: the board brings a live window forward or reopens a closed one.
+// Open a role's terminal on this PC: the board brings a live window forward. It never opens a new one.
 const SAY = { ok: 'Brought its window to the front', opened: 'Opened a new terminal', notfound: 'Window not found — is it still open?',
   unnamed: 'That window has no name — run /rename <role> in it once', noname: 'That window has no name — run /rename <role> in it once',
-  unsupported: 'Opening windows needs the board running on Windows itself, not in a container — copy the resume command instead',
+  closed: 'Its window is closed — copy resume to reopen it', unsupported: 'Opening windows needs the board running on Windows itself, not in a container — copy the resume command instead',
   failed: 'Could not open it' };
 function toast(t) {
   const el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); el.textContent = t;
@@ -1003,21 +1054,6 @@ async function openWindow(id, role) {
     toast(r.ok ? SAY[(await r.json()).result] ?? 'Done' : 'Could not open it (' + r.status + ')');
   } catch { toast('Board not reachable'); }
 }
-// Every role on the Map, in its order (main first): main's window has to exist before the others
-// can join it as tabs, hence the pause between them. Locked while it runs — bringing a window forward
-// can take half a minute, and a second click would start a role with no window twice.
-$('openall').onclick = async () => {
-  const b = $('openall'), btns = [...document.querySelectorAll('#p-map button.open[data-role]')];
-  b.disabled = true;
-  try {
-    for (const [i, o] of btns.entries()) {
-      b.textContent = `Opening ${i + 1}/${btns.length}…`;
-      await openWindow(o.dataset.win, o.dataset.role);
-      if (i < btns.length - 1) await new Promise(r => setTimeout(r, 2500));
-    }
-  } finally { b.disabled = false; b.textContent = 'Open all'; }
-};
-
 // Drawer: one session's conversation.
 let OPEN_ID = null, START = 0, OPENER = null;
 // Just enough Markdown to read Claude: **bold** and `code`. Escaped first, so nothing else gets through.

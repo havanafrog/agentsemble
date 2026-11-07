@@ -20,6 +20,7 @@ import { loadAgents } from './lib/agents.mjs';
 import { projectSlug, leaf, claudeHome, isMain, hostPath } from './lib/paths.mjs';
 import { openWindow } from './lib/open.mjs';
 import { kitOf } from './lib/kit.mjs';
+import { sessionCost } from './lib/cost.mjs';
 import { read as readLedger, open as openClaims, ledgerGroups, ledgerPath } from './ledger.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -257,6 +258,7 @@ export function sessions(dir, now = Date.now(), role = null, names = sessionName
       turns: rows.filter(r => r.type === 'assistant').length,
       phase: phaseOf(last, idle), idleMs: idle, last, steps, asked,
       suggest: suggestOf(id, st.mtimeMs),
+      cost: sessionCost(dir, id),
     });
   }
   return out.sort((a, b) => a.idleMs - b.idleMs);
@@ -352,29 +354,51 @@ function git(root, ...a) { return gitRaw(root, ...a)?.trim() ?? null; }
 // again in the background once it is GIT_TTL old (counted from when the answer came back).
 // Off in tests and one-shot use: there git runs in line and is always fresh.
 const GIT_TTL = 15_000;
+// Past GIT_TTL git is asked again only when the repo's own files moved (gitStamp) — stat calls, no
+// process. Edits nobody staged don't move them, so an answer is re-asked anyway once GIT_MAX old.
+const GIT_MAX = 60_000;
 // A git that hangs (antivirus, a network drive) is killed and counts as no answer, so nothing waits forever.
 const GIT_OPT = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, maxBuffer: 64 << 20, timeout: 30_000 };
 const GIT_FORGET = 10 * 60_000;  // answers nobody asked for in this long are dropped (old diffs, old branches)
-let gitMemo = null;            // key -> { at, v }
+let gitMemo = null;            // key -> { at, v, stamp }
 const gitAsking = new Map();   // key -> promise of the answer on its way
 let gitWatch = null;           // settled(): the answers its fn is waiting on
 // Untrimmed: porcelain lines start with a status column that may be a space.
 function gitRaw(root, ...a) {
   const args = ['-C', root, ...a];
   if (!gitMemo) { try { return execFileSync('git', args, GIT_OPT); } catch { return null; } }
-  const k = args.join('\0'), hit = gitMemo.get(k);
-  if ((!hit || Date.now() - hit.at >= GIT_TTL) && !gitAsking.has(k)) {
+  const k = args.join('\0'), hit = gitMemo.get(k), age = hit ? Date.now() - hit.at : Infinity;
+  const stamp = hit && age >= GIT_TTL ? gitStamp(root) : null;
+  if (hit && age >= GIT_TTL && age < GIT_MAX && stamp === hit.stamp) return hit.v;  // null both: not a repo, git only fails
+  if ((!hit || age >= GIT_TTL) && !gitAsking.has(k)) {
+    const was = stamp ?? gitStamp(root);  // taken before git runs: a change during the run is seen next time
     gitAsking.set(k, new Promise(done => {
       const keep = v => {
         const now = Date.now();
         for (const [x, e] of gitMemo) if (now - e.at > GIT_FORGET) gitMemo.delete(x);
-        gitMemo.set(k, { at: now, v }); gitAsking.delete(k); done();
+        gitMemo.set(k, { at: now, v, stamp: was }); gitAsking.delete(k); done();
       };
       try { execFile('git', args, GIT_OPT, (err, out) => keep(err ? null : out)); } catch { keep(null); }
     }));
   }
   if (gitAsking.has(k)) gitWatch?.add(gitAsking.get(k));
   return hit ? hit.v : null;
+}
+/**
+ * When the repo's git files last moved: this checkout's HEAD, index and reflog, the shared refs, and
+ * every other worktree's HEAD and reflog (a commit there changes a branch diffed here). null = not a repo.
+ */
+export function gitStamp(root) {
+  try {
+    let dir = join(root, '.git');
+    if (statSync(dir).isFile()) dir = resolve(root, readFileSync(dir, 'utf8').match(/gitdir:\s*(.+)/)[1].trim());
+    const cf = join(dir, 'commondir'), common = existsSync(cf) ? resolve(dir, readFileSync(cf, 'utf8').trim()) : dir;
+    const wt = join(common, 'worktrees');
+    const dirs = [...new Set([dir, common, ...(existsSync(wt) ? readdirSync(wt).map(n => join(wt, n)) : [])])];
+    const files = dirs.flatMap(d => ['HEAD', 'index', join('logs', 'HEAD')].map(f => join(d, f)))
+      .concat(['packed-refs', 'FETCH_HEAD', join('refs', 'heads'), join('refs', 'remotes')].map(f => join(common, f)));
+    return files.map(f => { try { return statSync(f).mtimeMs; } catch { return 0; } }).join(',');
+  } catch { return null; }
 }
 /** fn() again once the git answers it asked for have come back — for a fresh view on demand.
  *  Waits only on its own answers, and at most three rounds. */
@@ -608,14 +632,8 @@ async function main(argv) {
         const s = id ? d.sessions.find(x => x.id === id) : null;
         const role = d.roles.find(r => r.name === (s?.role ?? roleName));
         if ((id && !s) || !role) return res.writeHead(404).end();
-        const all = liveSessions();
-        const live = s ? all.find(l => l.id === s.id) ?? null : null;
-        const dir = role.shared ? root : role.dir;
-        // A sub's tab goes beside main's window when main is open (named), even one the board didn't
-        // open; otherwise into one Windows Terminal window per project.
-        const main = role.isMain ? null : d.roles.find(r => r.isMain);
-        const mainLive = main && d.sessions.filter(x => x.role === main.name).map(x => all.find(l => l.id === x.id && l.named)).find(Boolean);
-        openWindow({ s, live, role: { ...role, dir, win: `agentsemble-p${roots.indexOf(root)}`, near: mainLive?.name ?? null } }).then(result => json({ result }), e => res.writeHead(500).end(String(e.message)));
+        const live = s ? liveSessions().find(l => l.id === s.id) ?? null : null;
+        openWindow({ live }).then(result => json({ result }), e => res.writeHead(500).end(String(e.message)));
         return;
       }
       if (path === '/api/log') {
@@ -780,11 +798,24 @@ export async function selftest(ok) {
     const before = await settled(st);
     writeFileSync(join(repo, 'x.txt'), 'x');
     const kept = st();
-    for (const v of gitMemo.values()) v.at -= GIT_TTL;
+    for (const v of gitMemo.values()) v.at -= GIT_MAX;  // an untracked file moves no git file
     const stale = st();
     ok('the server never waits for git: nothing yet, then the last answer while a new one is asked',
        first === null && asked === 1 && before === '' && kept === '' && stale === '' && gitAsking.size === 1);
     ok('a settled look sees the new answer', (await settled(st)).includes('x.txt') && gitAsking.size === 0);
+    for (const v of gitMemo.values()) v.at -= GIT_TTL;
+    st();
+    ok('past the TTL with the repo files unmoved, git is not asked again', gitAsking.size === 0);
+    for (const v of gitMemo.values()) v.at -= GIT_MAX;
+    st();
+    ok('past GIT_MAX it is asked anyway (edits nobody staged)', gitAsking.size === 1);
+    await settled(st);
+    execFileSync('git', ['-C', repo, 'add', 'x.txt']);
+    for (const v of gitMemo.values()) v.at -= GIT_TTL;
+    st();
+    ok('a moved index asks again', gitAsking.size === 1);
+    await settled(st);
+    execFileSync('git', ['-C', repo, 'rm', '-q', '--cached', 'x.txt']);
     gitAsking.set('hang', new Promise(() => {}));
     for (const v of gitMemo.values()) v.at -= GIT_TTL;
     gitMemo.set('old', { at: Date.now() - GIT_FORGET - 1, v: 'x' });
