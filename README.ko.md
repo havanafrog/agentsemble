@@ -116,7 +116,8 @@ main 폴더에서 main 의 도구로 엽니다.
 
 | | |
 |---|---|
-| `/agentsemble` | 파악 → 제안 → 꾸리기 → 창 열기 안내 → 운영 규칙 |
+| `/agentsemble` | **가벼운 모드(기본):** 파악 → 제안 → 역할을 `.claude/agents/` 서브에이전트로 저장, 이 세션 하나에서 부림. 창·worktree·판·Docker 없음 |
+| `/agentsemble team` | 파악 → 제안 → 꾸리기 → 창 열기 안내 → 운영 규칙 |
 | `/agentsemble status` | 역할마다 계획 대 실제 (`bin/status.mjs`, 어긋나면 exit 1) |
 | `node bin/inventory.mjs` | 설치된 플러그인(켜짐/꺼짐, 딸린 스킬)과 내 스킬 목록 |
 | `/agentsemble add <역할>` | 역할 하나 더 |

@@ -126,7 +126,8 @@ Commit it — the team has history like the code. Schema: `agents.schema.json`.
 
 | | |
 |---|---|
-| `/agentsemble` | understand → propose → set up → open windows → working rules |
+| `/agentsemble` | **Lite (default):** understand → propose → roles written as subagents in `.claude/agents/`, run from this one session. No extra windows, worktrees, board or Docker |
+| `/agentsemble team` | understand → propose → set up → open windows → working rules |
 | `/agentsemble status` | planned vs installed tools per role (`bin/status.mjs`, exits 1 on drift) |
 | `node bin/inventory.mjs` | installed plugins (on/off, with their skills) and your own skills |
 | `/agentsemble add <role>` | one more role |

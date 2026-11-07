@@ -1,6 +1,6 @@
 ---
 name: agentsemble
-description: Read this repo, propose a team of Claude Code sessions (one main + subs; only roles that edit files get their own git worktree), set it up after the human approves, watch it on a local board, and keep a builder/verifier ledger. Use for "/agentsemble", "set up an agent team", "split this work across sessions", "/agentsemble status | add <role> | board", and the ledger — "/agentsemble verify", "/agentsemble claim", "/agentsemble claims", "/agentsemble send".
+description: Read this repo, propose a team, and run it — by default as Claude Code subagents inside this one session (no extra windows, folders, board or Docker); with "/agentsemble team", as separate sessions with their own git worktrees and a local board. Keeps a builder/verifier ledger. Use for "/agentsemble", "set up an agent team", "split this work across agents/sessions", "/agentsemble team | status | add <role> | board", and the ledger — "/agentsemble verify", "/agentsemble claim", "/agentsemble claims", "/agentsemble send".
 ---
 
 # agentsemble
@@ -16,13 +16,53 @@ tool is not available, ask in plain text.
 
 | Command | What happens |
 |---|---|
-| `/agentsemble` | steps 0-5 below |
-| `/agentsemble status` | `status.mjs` — plan vs installed tools, per role |
-| `/agentsemble add <role>` | steps 2-4 for one extra role |
-| `/agentsemble board` | start `board.mjs` in the background (it keeps running), give the URL |
+| `/agentsemble` | **Lite** (next section) — the team as subagents of this session |
+| `/agentsemble team` | steps 0-5 below — separate sessions, worktrees, board |
+| `/agentsemble status` | `status.mjs` — plan vs installed tools, per role (team mode) |
+| `/agentsemble add <role>` | Lite: write one more `.claude/agents/<role>.md`. Team: steps 2-4 for one role |
+| `/agentsemble board` | start `board.mjs` in the background (it keeps running), give the URL — http://127.0.0.1:8740 by default, `--port <N>` for another |
 | `/agentsemble verify` · `claim` · `claims` · `send` | the builder/verifier ledger — **read `references/ledger.md` first** and follow it; skip the steps below |
 
 (`/ops …` from older versions means the same ledger commands.)
+
+## Lite (default): the team as subagents
+
+Light on the machine: one Claude session, no extra windows, no standing worktrees, no board, no
+Docker. Each role is a Claude Code subagent that this session starts with the Agent tool when there
+is work for it, and that ends when it reports.
+
+1. Do steps 0 and 1 below.
+2. Propose roles as in step 2, but drop `dir / branch`, `plugins` and `task`; no folder list. Say
+   per role whether it edits files or only reads. Ask with choices: *Approve (Recommended)* ·
+   *Change roles* · *Stay solo*.
+3. On approve, write one file per sub role, `.claude/agents/<role>.md`, then commit them:
+
+   ```
+   ---
+   name: <role>
+   description: <what it does> — use for <when main should send it work>
+   model: <opus | sonnet | haiku, as in step 2; omit for the default>
+   tools: Read, Grep, Glob, Bash, Edit, Write     # a role that only reads: Read, Grep, Glob, Bash
+   ---
+   Owns: <files>. Never edits: <files other roles own>.
+   Autonomy: <ask | build | run> (meaning as in step 5).
+   Skills to use: <names, with the reason>.
+   Report: what changed, how it was checked (commands and numbers), files touched.
+   ```
+
+4. Running the team — this session is main:
+   - Send work with the Agent tool, `subagent_type: "<role>"`, and a self-contained brief (goal,
+     files, how it will be checked, what not to touch). A subagent cannot ask the human; for an
+     `ask` role, have it return a plan only, show the human, then send it again with "go".
+   - Roles that only read can run in parallel.
+   - Editing roles run one at a time in this folder. Only when two editing roles must run at the
+     same time, pass `isolation: "worktree"` to each; that worktree is temporary (removed if
+     unchanged), and main merges its branch.
+   - Main checks each report itself (runs the check) before accepting it, and records verdicts in
+     the ledger when the claim matters.
+5. Tell the human, one line each: roles live in `.claude/agents/`; the board is off — if wanted,
+   `/agentsemble board` serves it at http://127.0.0.1:8740 (another port: `--port <N>`); and
+   `/agentsemble team` switches to separate sessions.
 
 ## 0. Check the ground
 
@@ -37,6 +77,8 @@ tool is not available, ask in plain text.
   On no, stop.
 - `agents.json` already exists → do not redesign. Run `status.mjs`, show the result, and ask
   with choices: *Add a role* · *Redesign the team* · *Nothing — keep it*.
+- Lite, and `.claude/agents/` already has role files → list them (name, model, one line each) and
+  ask the same three choices.
 
 ## 1. Understand the project (read only)
 
