@@ -626,7 +626,7 @@ function card(s, now, isMain) {
     + suggestLine(s)
     + (steps ? `<div class="flow">${steps}</div>` : '')
     + `<div class="foot"><span>${esc(s.branch ?? '')}</span>${costTag(s.cost)}`
-    + (s.sub ? '<span>subagent</span>' : `<span>${LIVE.has(s.id) ? `<span class="copy" role="button" tabindex="0" data-win="${esc(s.id)}">open window</span> ` : ''}<span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span></span>`) + '</div></button>';
+    + (s.sub ? '<span>subagent</span>' : `<span><span class="copy" role="button" tabindex="0" data-win="${esc(s.id)}">${LIVE.has(s.id) ? 'open window' : 'reopen'}</span> <span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span></span>`) + '</div></button>';
 }
 
 // The team, live: main on top, its subs below, one card per role. Each card says what its window is
@@ -659,7 +659,7 @@ function roleCard(d, r, now) {
     + (steps ? `<div class="flow">${steps}</div>` : (s ? '' : `<div class="none">${esc(cut(r.what || 'No session yet.', 160))}</div>`))
     + (areas ? `<div class="areas">${areas}</div>` : '')
     + `<div class="foot"><span>${esc([r.branch, sends].filter(Boolean).join(' · '))}</span>${costTag(cost)}`
-    + (s && !s.sub && LIVE.has(s.id) ? `<button type="button" class="open" data-win="${esc(s.id)}" data-role="${esc(r.name)}" title="Bring its terminal to the front">Open</button>` : '')
+    + (s && !s.sub ? `<button type="button" class="open" data-win="${esc(s.id)}" data-role="${esc(r.name)}" title="${LIVE.has(s.id) ? 'Bring its terminal to the front' : 'Reopen it with claude --resume'}">Open</button>` : '')
     + (s && !s.sub ? `<span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span>` : '') + '</div></div>';
 }
 function mapHtml(d, now) {
@@ -747,7 +747,7 @@ let FAILS = 0;
 // One tab per task: a project's own roles (no "task") under its title, each task's roles under the
 // task's name. main heads every tab of its project. Several projects come from board.mjs --also.
 let ALL = null, CUR = null;
-let LIVE = new Set();   // ids of windows open right now — only those get Open (the board never starts one)
+let LIVE = new Set();   // ids of windows open right now: Open brings these forward, any other is resumed
 try { CUR = localStorage.getItem('as-task'); } catch { /* */ }
 function tasksOf(all) {
   // Keyed by the project's title, not its place in --also: the viewer's order, names and icons stay on
@@ -1044,10 +1044,10 @@ document.addEventListener('keydown', e => {
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-open]')) { e.preventDefault(); openDrawer(e.target.dataset.open); }
 });
 
-// Open a role's terminal on this PC: the board brings a live window forward. It never opens a new one.
+// Open a role's terminal on this PC: a live window comes forward, a closed one is resumed — only on this click.
 const SAY = { ok: 'Brought its window to the front', opened: 'Opened a new terminal', notfound: 'Window not found — is it still open?',
   unnamed: 'That window has no name — run /rename <role> in it once', noname: 'That window has no name — run /rename <role> in it once',
-  closed: 'Its window is closed — copy resume to reopen it', unsupported: 'Opening windows needs the board running on Windows itself, not in a container — copy the resume command instead',
+  closed: 'No session to reopen yet', unsupported: 'Opening windows needs the board running on Windows itself, not in a container — copy the resume command instead',
   failed: 'Could not open it' };
 function toast(t) {
   const el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); el.textContent = t;

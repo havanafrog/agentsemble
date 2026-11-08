@@ -701,7 +701,7 @@ async function main(argv) {
         const role = d.roles.find(r => r.name === (s?.role ?? roleName));
         if ((id && !s) || !role) return res.writeHead(404).end();
         const live = s ? liveSessions().find(l => l.id === s.id) ?? null : null;
-        openWindow({ live }).then(result => json({ result }), e => res.writeHead(500).end(String(e.message)));
+        openWindow({ s, live, dir: role.shared ? root : role.dir }).then(result => json({ result }), e => res.writeHead(500).end(String(e.message)));
         return;
       }
       if (path === '/api/log') {

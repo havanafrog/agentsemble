@@ -115,15 +115,20 @@ export function launch(dir, cmd, platform = process.platform, run = spawn, win =
 export const cleanEnv = env => Object.fromEntries(Object.entries(env).filter(([k]) => !/^CLAUDE_CODE_|^CLAUDECODE$|^CLAUDE_PID$/.test(k)));
 
 /**
- * One click from the board: a live window is brought forward. The board never opens a new window —
- * a closed session says 'closed' (its card has "copy resume" to reopen it by hand). Starting windows
- * is `agentsemble open` (team.mjs) only. A live window without a name can't be found: say so.
+ * One click on Open: a live window is brought forward; a closed session is resumed in a new tab
+ * (never a live one — two windows on one session break both). Nothing opens without that click:
+ * no Open all, no Start. A live window without a name can't be found: say so.
+ * @param s     the session clicked, or null (a role with no session: nothing to resume)
  * @param live  the registry entry if its window is open
+ * @param dir   the folder to resume in
  */
-export async function openWindow({ live }, platform = process.platform, find = focus) {
-  if (!live) return 'closed';
-  const r = await find(live.named ? live.name : null, platform);
-  return r === 'noname' ? 'unnamed' : r;
+export async function openWindow({ s, live, dir }, platform = process.platform, run = spawn, find = focus) {
+  if (live) {
+    const r = await find(live.named ? live.name : null, platform);
+    return r === 'noname' ? 'unnamed' : r;
+  }
+  if (!s) return 'closed';
+  return launch(dir, command({ id: s.id }), platform, run);
 }
 
 export async function selftest(ok) {
@@ -135,10 +140,12 @@ export async function selftest(ok) {
      && command({ model: 'opus' }) === 'claude --model opus' && command() === 'claude');
   const calls = [];
   const run = (...a) => { calls.push(a); return { unref() {} }; };
-  ok('the board never opens a window: a closed session or a role with no session says closed',
-     await openWindow({ s: { id: 'x' }, live: null, role: { dir: '.' } }, 'win32') === 'closed' && await openWindow({ s: null, live: null, role: { dir: '.' } }, 'win32') === 'closed');
-  ok('a live window is focused', await openWindow({ live: { named: true, name: 'ui' } }, 'win32', async n => n === 'ui' ? 'ok' : 'notfound') === 'ok');
-  ok('a live window with no name says so', await openWindow({ live: { named: false, name: 'x' } }, 'win32', async n => n ? 'ok' : 'noname') === 'unnamed');
+  ok('a closed session reopens with --resume in its folder', await openWindow({ s: { id: '0123abcd-0000-4000-8000-0123456789ab' }, live: null, dir: 'D:/w/ui' }, 'win32', run) === 'opened'
+     && calls[0][1].at(-1) === 'claude --resume 0123abcd-0000-4000-8000-0123456789ab' && calls[0][2].cwd === 'D:/w/ui');
+  ok('a role with no session opens nothing', await openWindow({ s: null, live: null, dir: '.' }, 'win32', run) === 'closed' && calls.length === 1);
+  ok('a live window is focused, never reopened', await openWindow({ s: { id: 'x' }, live: { named: true, name: 'ui' } }, 'win32', run, async n => n === 'ui' ? 'ok' : 'notfound') === 'ok' && calls.length === 1);
+  ok('a live window with no name says so', await openWindow({ s: { id: 'x' }, live: { named: false, name: 'x' } }, 'win32', run, async n => n ? 'ok' : 'noname') === 'unnamed');
+  calls.length = 0;
   ok('with a window name launch opens a tab in that Windows Terminal window', launch('D:/w', command({ name: 'ui' }), 'win32', run, 'agentsemble-p1') === 'opened'
      && calls[0][0] === 'wt' && calls[0][1].join(' ') === '-w agentsemble-p1 new-tab -d D:/w cmd /k claude --name ui');
   // A missing program: spawn returns, then emits 'error' — as node does.
