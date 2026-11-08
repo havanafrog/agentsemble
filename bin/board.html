@@ -525,7 +525,7 @@ function markSeen(s) { SEEN[s.id] = lastAt(s); try { localStorage.setItem('as-se
 // once the browser is allowed (asked from the bell, on a click).
 const CAN_NOTIFY = 'Notification' in window;
 let WAITING = null, NOWWAIT = [];          // ids waiting last tick (null until the first tick); waiting now
-const who = s => s.role ?? s.name ?? s.id.slice(0, 8);
+const who = s => s.label ?? s.role ?? s.name ?? s.id.slice(0, 8);
 // Desktop alerts: on (allowed), off (not asked yet) or blocked (denied, or no Notification here).
 const alertState = () => !CAN_NOTIFY ? 'blocked' : { granted: 'on', default: 'off' }[Notification.permission] ?? 'blocked';
 const ALERT_WORD = { on: 'desktop alerts on', off: 'desktop alerts off', blocked: 'desktop alerts blocked' };
@@ -651,7 +651,7 @@ function roleCard(d, r, now) {
   const mine = d.sessions.filter(x => x.role === r.name);
   const cost = mine.some(x => x.cost) ? { ...sumCost(mine), ctx: s?.cost?.ctx } : null;
   return `<div class="win rolecard ${s?.phase === 'moving' || s?.phase === 'stopped' ? s.phase : ''} ${isMain ? 'main' : ''}"${s ? ` data-open="${esc(s.id)}" role="button" tabindex="0" aria-label="Read ${esc(r.name)} conversation"` : ''}>`
-    + `<div class="head">${s && unread(s) ? '<span class="unread" title="new since you last opened it"></span>' : ''}<span class="nm">${esc(r.name)}</span>`
+    + `<div class="head">${s && unread(s) ? '<span class="unread" title="new since you last opened it"></span>' : ''}<span class="nm">${esc(r.isMain ? d.title + '_main' : r.name)}</span>`
     + `<span class="meta2">${esc([r.shared ? 'shares main folder' : '', r.autonomy, r.model].filter(Boolean).join(' · '))}</span>`
     + `<span class="ph ${esc(s?.phase ?? '')}">${s ? esc(PHASE[s.phase] ?? '') + ' · ' + esc(ago(s.idleMs)) : (r.lite ? 'no run in 24 h' : 'no window')}</span></div>`
     + (order ? `<div class="asked"><i>order</i>${esc(cut(order.text, 90))}</div>` : s?.asked ? `<div class="asked"><i>asked</i>${esc(cut(s.asked, 90))}</div>` : '')
@@ -938,6 +938,8 @@ async function tickOnce() {
     const r = await fetch('/api/board', { cache: 'no-store' });
     if (!r.ok) { paint('tally', esc(`board error ${r.status}: ${(await r.text()).slice(0, 200)}`)); return; }
     ALL = await r.json();
+    // main is the same word in every project: tell them apart as <project>_main.
+    for (const d of ALL.projects) for (const s of d.sessions) if (s.role === 'main') s.label = d.title + '_main';
   } catch {
     // One missed beat is normal (a restart); say so only when it keeps failing.
     if (++FAILS >= 3) paint('tally', 'board server not reachable — is <code>board.mjs</code> still running?');
