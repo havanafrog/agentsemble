@@ -626,7 +626,7 @@ function card(s, now, isMain) {
     + suggestLine(s)
     + (steps ? `<div class="flow">${steps}</div>` : '')
     + `<div class="foot"><span>${esc(s.branch ?? '')}</span>${costTag(s.cost)}`
-    + (s.sub ? '<span>subagent</span>' : `<span><span class="copy" role="button" tabindex="0" data-win="${esc(s.id)}">open window</span> <span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span></span>`) + '</div></button>';
+    + (s.sub ? '<span>subagent</span>' : `<span>${LIVE.has(s.id) ? `<span class="copy" role="button" tabindex="0" data-win="${esc(s.id)}">open window</span> ` : ''}<span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span></span>`) + '</div></button>';
 }
 
 // The team, live: main on top, its subs below, one card per role. Each card says what its window is
@@ -659,7 +659,7 @@ function roleCard(d, r, now) {
     + (steps ? `<div class="flow">${steps}</div>` : (s ? '' : `<div class="none">${esc(cut(r.what || 'No session yet.', 160))}</div>`))
     + (areas ? `<div class="areas">${areas}</div>` : '')
     + `<div class="foot"><span>${esc([r.branch, sends].filter(Boolean).join(' · '))}</span>${costTag(cost)}`
-    + (s && !s.sub ? `<button type="button" class="open" data-win="${esc(s.id)}" data-role="${esc(r.name)}" title="Bring its terminal to the front">Open</button>` : '')
+    + (s && !s.sub && LIVE.has(s.id) ? `<button type="button" class="open" data-win="${esc(s.id)}" data-role="${esc(r.name)}" title="Bring its terminal to the front">Open</button>` : '')
     + (s && !s.sub ? `<span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span>` : '') + '</div></div>';
 }
 function mapHtml(d, now) {
@@ -747,6 +747,7 @@ let FAILS = 0;
 // One tab per task: a project's own roles (no "task") under its title, each task's roles under the
 // task's name. main heads every tab of its project. Several projects come from board.mjs --also.
 let ALL = null, CUR = null;
+let LIVE = new Set();   // ids of windows open right now — only those get Open (the board never starts one)
 try { CUR = localStorage.getItem('as-task'); } catch { /* */ }
 function tasksOf(all) {
   // Keyed by the project's title, not its place in --also: the viewer's order, names and icons stay on
@@ -939,6 +940,7 @@ async function tickOnce() {
     if (!r.ok) { paint('tally', esc(`board error ${r.status}: ${(await r.text()).slice(0, 200)}`)); return; }
     ALL = await r.json();
     // main is the same word in every project: tell them apart as <project>_main.
+    LIVE = new Set(ALL.projects.flatMap(d => (d.live ?? []).map(l => l.id)));
     for (const d of ALL.projects) for (const s of d.sessions) if (s.role === 'main') s.label = d.title + '_main';
   } catch {
     // One missed beat is normal (a restart); say so only when it keeps failing.
