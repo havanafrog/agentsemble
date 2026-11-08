@@ -626,7 +626,7 @@ function card(s, now, isMain) {
     + suggestLine(s)
     + (steps ? `<div class="flow">${steps}</div>` : '')
     + `<div class="foot"><span>${esc(s.branch ?? '')}</span>${costTag(s.cost)}`
-    + `<span><span class="copy" role="button" tabindex="0" data-win="${esc(s.id)}">open window</span> <span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span></span></div></button>`;
+    + (s.sub ? '<span>subagent</span>' : `<span><span class="copy" role="button" tabindex="0" data-win="${esc(s.id)}">open window</span> <span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span></span>`) + '</div></button>';
 }
 
 // The team, live: main on top, its subs below, one card per role. Each card says what its window is
@@ -636,7 +636,9 @@ function card(s, now, isMain) {
 const RANK = { moving: 3, busy: 2, waiting: 1, stopped: 0 };
 function roleCard(d, r, now) {
   const m = d.map, mr = m.roles.find(x => x.name === r.name) ?? { stray: [], changed: {} };
-  const s = d.sessions.filter(x => x.role === r.name).sort((x, y) => x.idleMs - y.idleMs)[0];
+  // A role's open window beats its subagents; otherwise the newest run, window or subagent.
+  const all = d.sessions.filter(x => x.role === r.name).sort((x, y) => x.idleMs - y.idleMs);
+  const s = all.find(x => !x.sub && x.phase !== 'stopped') ?? all[0];
   const order = s && d.team.subs.find(x => x.id === s.id)?.order;
   const areas = m.areas.map(a => {
     const own = a.own?.[r.name] ?? 0, ch = mr.changed?.[a.name] ?? 0, stray = mr.stray.includes(a.name);
@@ -651,14 +653,14 @@ function roleCard(d, r, now) {
   return `<div class="win rolecard ${s?.phase === 'moving' || s?.phase === 'stopped' ? s.phase : ''} ${isMain ? 'main' : ''}"${s ? ` data-open="${esc(s.id)}" role="button" tabindex="0" aria-label="Read ${esc(r.name)} conversation"` : ''}>`
     + `<div class="head">${s && unread(s) ? '<span class="unread" title="new since you last opened it"></span>' : ''}<span class="nm">${esc(r.name)}</span>`
     + `<span class="meta2">${esc([r.shared ? 'shares main folder' : '', r.autonomy, r.model].filter(Boolean).join(' · '))}</span>`
-    + `<span class="ph ${esc(s?.phase ?? '')}">${s ? esc(PHASE[s.phase] ?? '') + ' · ' + esc(ago(s.idleMs)) : 'no window'}</span></div>`
+    + `<span class="ph ${esc(s?.phase ?? '')}">${s ? esc(PHASE[s.phase] ?? '') + ' · ' + esc(ago(s.idleMs)) : (r.lite ? 'no run in 24 h' : 'no window')}</span></div>`
     + (order ? `<div class="asked"><i>order</i>${esc(cut(order.text, 90))}</div>` : s?.asked ? `<div class="asked"><i>asked</i>${esc(cut(s.asked, 90))}</div>` : '')
     + suggestLine(s)
-    + (steps ? `<div class="flow">${steps}</div>` : (s ? '' : `<div class="none">${esc(r.what || 'No session yet.')}</div>`))
+    + (steps ? `<div class="flow">${steps}</div>` : (s ? '' : `<div class="none">${esc(cut(r.what || 'No session yet.', 160))}</div>`))
     + (areas ? `<div class="areas">${areas}</div>` : '')
     + `<div class="foot"><span>${esc([r.branch, sends].filter(Boolean).join(' · '))}</span>${costTag(cost)}`
-    + (s ? `<button type="button" class="open" data-win="${esc(s.id)}" data-role="${esc(r.name)}" title="Bring its terminal to the front">Open</button>` : '')
-    + (s ? `<span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span>` : '') + '</div></div>';
+    + (s && !s.sub ? `<button type="button" class="open" data-win="${esc(s.id)}" data-role="${esc(r.name)}" title="Bring its terminal to the front">Open</button>` : '')
+    + (s && !s.sub ? `<span class="copy" role="button" tabindex="0" data-copy="${esc(resumeCmd(s))}">copy resume</span>` : '') + '</div></div>';
 }
 function mapHtml(d, now) {
   const m = d.map;

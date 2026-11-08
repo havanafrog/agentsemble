@@ -11,7 +11,7 @@
 // Read-only. Logs contain whole conversations: keep it on localhost.
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, readdirSync, statSync, openSync, readSync, closeSync,
-  mkdirSync, writeFileSync, appendFileSync, rmSync, mkdtempSync } from 'node:fs';
+  mkdirSync, writeFileSync, utimesSync, appendFileSync, rmSync, mkdtempSync } from 'node:fs';
 import { join, dirname, basename, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFile, execFileSync } from 'node:child_process';
@@ -187,23 +187,56 @@ export function phaseOf(last, idle) {
   return last?.role === 'assistant' ? 'waiting' : 'busy';
 }
 
-/** Sessions in one log folder. Missing folder (role never opened) → []. Broken lines are skipped. */
-export function sessions(dir, now = Date.now(), role = null, names = sessionNames()) {
+// Subagents older than this are left off the board — a busy window can have hundreds.
+// ponytail: fixed window; make it a flag if a day turns out wrong.
+const SUB_KEEP_MS = 24 * 60 * 60 * 1000;
+
+/** Sessions in one log folder. Missing folder (role never opened) → []. Broken lines are skipped.
+ *  subRoles: with a set, each window's subagents of the last SUB_KEEP_MS come too, with `sub: true` —
+ *  a type in the set (a lite role) is their role; any other (Explore, general-purpose …) has no role,
+ *  so it lists with the other sessions and can't take a role's card. null: no subagent folder is read. */
+export function sessions(dir, now = Date.now(), role = null, names = sessionNames(), subRoles = null) {
   if (!dir || !existsSync(dir)) return [];
   let files;
   try { files = readdirSync(dir); } catch { return []; }   // unreadable (EACCES, cloud placeholder): show the rest
   const out = [];
   for (const f of files) {
     if (!f.endsWith('.jsonl')) continue;
+    const s = oneSession(dir, f, now, role, names);
+    if (!s) continue;
+    out.push(s);
+    // A window quiet past SUB_KEEP_MS has no subagent newer than that: its log is written after them.
+    if (!subRoles || s.idleMs > SUB_KEEP_MS) continue;
+    const sub = join(dir, s.id, 'subagents');
+    let subs = [];
+    try { subs = readdirSync(sub).filter(x => x.endsWith('.jsonl')); } catch { /* none */ }
+    for (const x of subs) {
+      try { if (now - statSync(join(sub, x)).mtimeMs > SUB_KEEP_MS) { TAIL.delete(join(sub, x)); continue; } } catch { continue; }
+      let meta = null;
+      try { meta = JSON.parse(readFileSync(join(sub, x.replace(/\.jsonl$/, '.meta.json')), 'utf8')); } catch { /* no meta */ }
+      const type = typeof meta?.agentType === 'string' ? meta.agentType : null;
+      if (!type) continue;
+      const a = oneSession(sub, x, now, subRoles.has(type) ? type : null, names, true);
+      // A finished run ends on its reply, which reads as "waiting for you" — it waits for nobody.
+      if (a) out.push({ ...a, sub: true, parent: s.id, agentType: type, phase: a.phase === 'waiting' ? 'stopped' : a.phase,
+        name: squash(`${type}: ${meta.description ?? a.name ?? ''}`).slice(0, 60) });
+    }
+  }
+  return out.sort((a, b) => a.idleMs - b.idleMs);
+}
+
+/** One log file as a card. sub: a subagent's log — no cost (it is in the parent's). */
+function oneSession(dir, f, now, role, names, sub = false) {
+  {
     const file = join(dir, f);
     let st;
-    try { st = statSync(file); } catch { continue; }
-    if (!st.isFile() || st.size === 0) continue;
+    try { st = statSync(file); } catch { return null; }
+    if (!st.isFile() || st.size === 0) return null;
     let rows = [];
     try { rows = tailLines(file).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); }
-    catch { continue; }
-    if (!rows.length) continue;
-    if (rows.some(r => r.entrypoint === 'sdk-cli')) continue;   // `claude -p` runs are not windows
+    catch { return null; }
+    if (!rows.length) return null;
+    if (rows.some(r => r.entrypoint === 'sdk-cli')) return null;   // `claude -p` runs are not windows
 
     let last = null;
     for (let i = rows.length - 1; i >= 0 && !last; i--) {
@@ -249,7 +282,7 @@ export function sessions(dir, now = Date.now(), role = null, names = sessionName
     } catch { /* head unreadable: show the rest */ }
     const idle = now - st.mtimeMs;
     const id = basename(f, '.jsonl');
-    out.push({
+    return {
       id, role, sends, heard: [...heard],
       name: names.get(id) ?? (first ? squash(first).slice(0, 30) : null),
       titled: names.has(id), first,
@@ -258,10 +291,9 @@ export function sessions(dir, now = Date.now(), role = null, names = sessionName
       turns: rows.filter(r => r.type === 'assistant').length,
       phase: phaseOf(last, idle), idleMs: idle, last, steps, asked,
       suggest: suggestOf(id, st.mtimeMs),
-      cost: sessionCost(dir, id),
-    });
+      cost: sub ? null : sessionCost(dir, id),
+    };
   }
-  return out.sort((a, b) => a.idleMs - b.idleMs);
 }
 
 // ── chat drawer ────────────────────────────────────────────────
@@ -270,6 +302,14 @@ const LOG_CUT = 6000;
 
 /** Session id → log file among the given folders. The id comes from a URL, so check its shape first. */
 export function logFile(id, dirs) {
+  if (/^agent-[\w-]{1,60}$/.test(id ?? '')) {   // a subagent: under one of the windows' folders
+    for (const d of dirs) {
+      let ws = [];
+      try { ws = readdirSync(d).filter(w => /^[0-9a-f-]{36}$/.test(w)); } catch { continue; }
+      for (const w of ws) { const f = join(d, w, 'subagents', id + '.jsonl'); if (existsSync(f)) return f; }
+    }
+    return null;
+  }
   if (!/^[0-9a-f-]{36}$/.test(id ?? '')) return null;
   for (const d of dirs) {
     const f = join(d, id + '.jsonl');
@@ -278,12 +318,13 @@ export function logFile(id, dirs) {
   return null;
 }
 
-/** Log rows → chat items. Consecutive tool uses fold into one group. */
-export function chatItems(rows) {
+/** Log rows → chat items. Consecutive tool uses fold into one group.
+ *  side: a subagent's own log, where every row is a sidechain — keep them. */
+export function chatItems(rows, side = false) {
   const out = [];
   for (const r of rows) {
     const m = r.message;
-    if (!m || r.isSidechain) continue;
+    if (!m || (r.isSidechain && !side)) continue;
     const parts = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : Array.isArray(m.content) ? m.content : [];
     if (m.role === 'user') {
       const text = parts.filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
@@ -296,7 +337,10 @@ export function chatItems(rows) {
     if (m.role !== 'assistant') continue;
     for (const c of parts) {
       if (c.type === 'text' && c.text.trim()) out.push({ who: 'claude', at: r.timestamp, text: c.text.trim().slice(0, LOG_CUT) });
-      else if (c.type === 'tool_use') {
+      // A subagent's final report is the input of its hand-back call, not a text block.
+      else if (c.type === 'tool_use' && c.name === 'SubagentHandback' && typeof c.input?.message === 'string') {
+        out.push({ who: 'claude', at: r.timestamp, text: c.input.message.trim().slice(0, LOG_CUT) });
+      } else if (c.type === 'tool_use') {
         const i = c.input ?? {};
         const t = { name: c.name, text: squash(i.description ?? i.command ?? i.file_path ?? i.pattern ?? i.to ?? i.query ?? i.url ?? i.skill ?? '').slice(0, 200) };
         const last = out.at(-1);
@@ -324,7 +368,7 @@ export function chatLog(file, { before = null, from = null } = {}) {
   if (from != null && hi === lo && buf.length === LOG_SPAN) hi = lo = buf.length;
   const rows = buf.subarray(lo, hi).toString('utf8').split('\n').filter(Boolean)
     .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-  return { items: chatItems(rows), start: start + lo, end: start + hi, size };
+  return { items: chatItems(rows, basename(dirname(file)) === 'subagents'), start: start + lo, end: start + hi, size };
 }
 
 /**
@@ -537,11 +581,33 @@ export function mapOf(root, roles, talk = []) {
   };
 }
 
-/** Roles from agents.json; without one, the repo alone as main so the board still works. */
+/** Roles from agents.json; without one, main plus the subagent roles in .claude/agents/ (lite mode),
+ *  so the board still works. */
 function rolesOf(root) { return teamFile(root).roles; }
 function teamFile(root) {
   try { const a = loadAgents(root); return { roles: a.roles, title: a.title ?? basename(resolve(root)) }; }
-  catch { return { roles: [{ name: 'main', dir: resolve(root), branch: null, what: '', skills: [], plugins: {}, isMain: true, task: null }], title: basename(resolve(root)) }; }
+  catch {
+    const main = { name: 'main', dir: resolve(root), branch: null, what: '', skills: [], plugins: {}, isMain: true, task: null };
+    return { roles: [main, ...subagentRoles(root)], title: basename(resolve(root)) };
+  }
+}
+/** .claude/agents/<role>.md → a shared role (works in main's folder, its runs are main's subagents). */
+export function subagentRoles(root) {
+  const d = join(resolve(root), '.claude', 'agents');
+  let fs = [];
+  try { fs = readdirSync(d).filter(f => f.endsWith('.md')); } catch { return []; }
+  return fs.flatMap(f => {
+    let head = '';
+    try { head = readFileSync(join(d, f), 'utf8').replace(/^﻿/, '').match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? ''; } catch { return []; }
+    const field = k => {   // a YAML block (| or >) reads as no value
+      const v = head.match(new RegExp(`^${k}:[ \\t]*(.*)$`, 'm'))?.[1].trim().replace(/^["']|["']$/g, '');
+      return v && !/^[|>][-+]?$/.test(v) ? v : null;
+    };
+    const name = field('name') ?? basename(f, '.md');
+    if (!/^[\w.-]+$/.test(name) || name === 'main') return [];
+    return [{ name, dir: resolve(root), relDir: '.', branch: null, what: field('description') ?? '', not: '', owns: [],
+      skills: [], plugins: {}, isMain: false, shared: true, lite: true, model: field('model'), autonomy: null, task: null }];
+  });
 }
 
 /** Shared roles work in the main folder, so their windows land in main's log folder.
@@ -560,9 +626,11 @@ export function board(root, now = Date.now()) {
   const names = sessionNames();
   const declared = new Set(roles.flatMap(r => r.skills));
   const views = roles.map(r => ({ name: r.name, dir: r.dir, branch: r.branch, what: r.what, model: r.model, autonomy: r.autonomy,
-    isMain: r.isMain, shared: !!r.shared, task: r.task ?? null, logDir: logDirOf(r.dir), kit: kitOf(r, declared) }));
+    isMain: r.isMain, shared: !!r.shared, lite: !!r.lite, task: r.task ?? null, logDir: logDirOf(r.dir), kit: kitOf(r, declared) }));
   // A shared role has no log folder of its own: read main's once, then hand its windows out.
-  const sess = claimShared(views.filter(v => !v.shared).flatMap(v => sessions(v.logDir, now, v.name, names)),
+  // Subagents show only on shared roles' cards, never as main; a live window of that role still wins (board.html roleCard).
+  const subRoles = new Set(views.filter(v => v.shared && !v.isMain && v.name !== 'main').map(v => v.name));
+  const sess = claimShared(views.filter(v => !v.shared).flatMap(v => sessions(v.logDir, now, v.name, names, subRoles)),
     views.filter(v => v.shared).map(v => v.name)).sort((a, b) => a.idleMs - b.idleMs);
   for (const v of views) v.sessionIds = sess.filter(s => s.role === v.name).map(s => s.id);
   const talk = sess.flatMap(s => s.sends.map(m => ({ ...m, from: s.name || s.id.slice(0, 8), role: s.role })))
@@ -637,7 +705,7 @@ async function main(argv) {
         return;
       }
       if (path === '/api/log') {
-        const file = logFile(q.get('id'), roots.flatMap(r => rolesOf(r).map(x => logDirOf(x.dir))));
+        const file = logFile(q.get('id'), [...new Set(roots.flatMap(r => rolesOf(r).map(x => logDirOf(x.dir))))]);
         if (!file) return res.writeHead(404).end();
         const num = k => (q.has(k) && /^\d+$/.test(q.get(k)) ? Number(q.get(k)) : null);
         return json(chatLog(file, { before: num('before'), from: num('from') }));
@@ -742,6 +810,30 @@ export async function selftest(ok) {
     claimShared(shs, ['review']);
     ok('a window renamed to a shared role belongs to that role', shs.map(s => s.role).join() === 'review,main,main');
     ok('missing log folder is not fatal', sessions(join(t, 'never-opened')).length === 0 && sessions(null).length === 0);
+    // Lite mode: a window's subagents are cards of their agent type; .claude/agents/ gives the roles.
+    const sa = join(flow, '11111111-2222-3333-4444-555555555555', 'subagents'); mkdirSync(sa, { recursive: true });
+    const subRow = JSON.stringify({ type: 'assistant', timestamp: new Date().toISOString(), message: { role: 'assistant', content: [{ type: 'text', text: 'checked it' }] } });
+    writeFileSync(join(sa, 'agent-a1.jsonl'), subRow + '\n'); writeFileSync(join(sa, 'agent-a1.meta.json'), '{"agentType":"review"}');
+    writeFileSync(join(sa, 'agent-a2.jsonl'), subRow + '\n');   // no meta: left out
+    const SS = sessions(flow, Date.now(), 'main', new Map(), new Set(['review'])), sub1 = SS.find(s => s.sub);
+    ok('a subagent is a card of its agent type, under its window, its cost left in the parent',
+       SS.length === 2 && sub1.role === 'review' && sub1.parent === S[0].id && sub1.cost === null && sub1.last.text === 'checked it');
+    ok('a finished subagent is not "waiting for you"', sub1.phase !== 'waiting');
+    const other = sessions(flow, Date.now(), 'main', new Map(), new Set(['ui'])).find(s => s.sub);
+    ok('a subagent of another type comes with no role, named by its type', other && other.role === null && other.agentType === 'review'
+       && other.name.startsWith('review:') && sessions(flow, Date.now(), 'main', new Map()).length === 1);
+    ok('an old subagent is left off', (() => { const p = join(sa, 'agent-a1.jsonl'), old = new Date(Date.now() - 2 * SUB_KEEP_MS); utimesSync(p, old, old);
+      const n = sessions(flow, Date.now(), 'main', new Map(), new Set(['review'])).length; utimesSync(p, new Date(), new Date()); return n === 1; })());
+    const lr = join(t, 'lite'); mkdirSync(join(lr, '.claude', 'agents'), { recursive: true });
+    writeFileSync(join(lr, '.claude', 'agents', 'review.md'), '---\nname: review\ndescription: "checks work"\nmodel: opus\n---\nbody');
+    writeFileSync(join(lr, '.claude', 'agents', 'bad.md'), '---\nname: a b\n---\n');
+    const lroles = rolesOf(lr);
+    ok('lite: roles are main plus .claude/agents/, shared, with model and description',
+       lroles.map(r => r.name).join() === 'main,review' && lroles[1].shared && lroles[1].lite && lroles[1].model === 'opus' && lroles[1].what === 'checks work');
+    writeFileSync(join(lr, '.claude', 'agents', 'web.md'), '﻿---\r\nname: web\r\ndescription:\r\nmodel: sonnet\r\n---\r\n');
+    writeFileSync(join(lr, '.claude', 'agents', 'ux.md'), '---\nname: ux\ndescription: >-\n  long text\n---\n');
+    const web = rolesOf(lr).find(r => r.name === 'web'), ux = rolesOf(lr).find(r => r.name === 'ux');
+    ok('front matter: a BOM and CRLF are fine, an empty or block value is no value', web?.model === 'sonnet' && web.what === '' && ux?.what === '');
     writeFileSync(join(t, 'not-a-dir'), 'x');
     ok('unreadable log folder is not fatal', sessions(join(t, 'not-a-dir')).length === 0);
     ok('opening a window needs the board page as origin', sameOrigin('http://127.0.0.1:8740', '127.0.0.1:8740') && !sameOrigin('https://evil.example', '127.0.0.1:8740') && !sameOrigin(undefined, '127.0.0.1:8740'));
@@ -778,6 +870,13 @@ export async function selftest(ok) {
        W.length === 1 && W[0].who === 'in' && W[0].from === 'main' && W[0].text === 'merged d26 — wait', JSON.stringify(W));
     ok('a message from another session is not what the person asked', !askedByHuman({ role: 'user', kind: 'text', text: wrapped }));
     ok('odd ids never touch the disk', logFile('../../etc/passwd', [t]) === null && logFile(null, [t]) === null);
+    ok('a subagent log is found under its window', logFile('agent-a1', [flow])?.endsWith('agent-a1.jsonl') && logFile('agent-../x', [flow]) === null);
+    const sideRow = JSON.stringify({ isSidechain: true, type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'side says' }] } });
+    writeFileSync(join(sa, 'agent-a3.jsonl'), sideRow + '\n');
+    ok('a subagent\'s log shows its rows (all sidechain); a window\'s log still hides sidechains',
+       chatLog(join(sa, 'agent-a3.jsonl')).items.some(i => JSON.stringify(i).includes('side says')) && chatItems([JSON.parse(sideRow)]).length === 0);
+    ok('a subagent\'s hand-back report reads as its reply', chatItems([{ message: { role: 'assistant', content: [
+      { type: 'tool_use', name: 'SubagentHandback', input: { message: 'all good' } }] } }])[0]?.text === 'all good');
     const cf = join(t, 'chat.jsonl');
     const big = { message: { role: 'user', content: [{ type: 'tool_result', content: 'x'.repeat(LOG_SPAN + 10) }] } };
     writeFileSync(cf, [JSON.stringify({ message: { role: 'user', content: 'first' } }), JSON.stringify(big),
